@@ -1,0 +1,17 @@
+[build-system]
+requires = ["scikit-build-core>=0.3.3", "nanobind"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "cartesian-hand"
+version = "0.1.0"
+description = "7-DOF FT servo gripper controller (cartesian hand)"
+requires-python = ">=3.8"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+reference = ["pyserial"]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+wheel.packages = []

@@ -1,0 +1,14 @@
+{
+    "version": 2,
+    "configurePresets": [
+      {
+        "name": "default",
+        "inherits": "vcpkg",
+        "environment": {
+          "VCPKG_ROOT": "${CMAKE_SOURCE_DIR}/vcpkg_installed",
+          "CMAKE_TOOLCHAIN_FILE": "${env:HOME}/repo/vcpkg/scripts/buildsystems/vcpkg.cmake",
+          "Python_EXECUTABLE": "${env:HOME}/repo/micromamba/envs/py312/bin/python"
+        }
+      }
+    ]
+  }
