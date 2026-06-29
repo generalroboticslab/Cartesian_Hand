@@ -1,0 +1,3 @@
+[submodule "hardware_bindings"]
+	path = hardware_bindings
+	url = git@github.com:generalroboticslab/hardware_bindings.git
