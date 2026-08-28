@@ -84,6 +84,57 @@ python test_cartesian_hand.py
 The mock has no friction, no load-dependent stall and no following error. It
 tells you whether your control flow is right, not whether your grip will hold.
 
+## What the seven DOFs are
+
+Two grippers share one vertical stage. Each gripper is a parallel jaw plus two
+independent finger slides; the stage carries the auxiliary gripper up and down.
+That is what lets the hand hold a bottle in one gripper and turn the cap with
+the other.
+
+Every DOF is linear and commanded in millimetres, measured from the hard stop
+that zeroing finds. There are no rotary joints in the controller's view, even
+though the servos themselves rotate — the rack converts turns to travel.
+
+| DOF | Role name | Axis | Orient | What it does | Servo `hand_1` / `hand_2` |
+|----:|-----------|:----:|:------:|--------------|:-------------------------:|
+| 0 | `BASE_JAW` | y | −1 | base parallel actuation | 0 / 7 |
+| 1 | `BASE_LEFT` | x | +1 | base left finger | 1 / 8 |
+| 2 | `BASE_RIGHT` | x | −1 | base right finger | 2 / 9 |
+| 3 | `Z` | z | −1 | vertical translation | 3 / 10 |
+| 4 | `AUX_JAW` | y | −1 | aux parallel actuation | 4 / 11 |
+| 5 | `AUX_LEFT` | x | +1 | aux left finger | 5 / 12 |
+| 6 | `AUX_RIGHT` | x | −1 | aux right finger | 6 / 13 |
+
+Three things the table hides:
+
+**DOF index is not servo ID.** The index is how the controller addresses a DOF
+and is the same on every hand; the servo ID is what answers on the serial bus
+and differs per hand. Everything user-facing — actions, observations, `set_pos`,
+`normalize` — is in DOF index order. Servo IDs appear only inside the driver.
+
+**`orientation` is which way the servo counts.** `+1` means rising counts are
+rising millimetres, `-1` the opposite. It exists because a left and a right
+finger are mirror images: the same physical motion is a rising count on one and
+a falling count on the other. It describes how the servo was installed, so a
+rebuilt hand may need it flipped.
+
+**The ordering is authoritative for the simulation.** DOF order here is the
+order the twin's actuators must be in, not the other way round. A twin ordered
+differently produces a policy that drives the right values into the wrong
+joints, and the contract check will not catch it — the fingerprint hashes travel
+limits and rate, not which servo is which.
+
+Names live in [`cartesian_hand/tasks/roles.py`](cartesian_hand/tasks/roles.py),
+with the groups tasks actually use: `JAWS`, `BASE_FINGERS`, `AUX_FINGERS`. The
+layout itself is `LAYOUT` in `hands.py`, and `standard_dofs(first_servo_id)`
+stamps it out with consecutive servo IDs — the only difference between the two
+hands.
+
+DOF 3 is the odd one out in every practical sense. It is the only DOF carrying a
+gravity load, so it needs its own torque (see Motion gains), it falls to rest
+whenever torque drops, and it is the DOF whose zeroing repeats worst between
+runs. See Known issues.
+
 ## Configuration
 
 Hands are defined in [`cartesian_hand/hands.py`](cartesian_hand/hands.py). It is
@@ -122,16 +173,26 @@ Motion(torque=[50, 50, 50, 150, 50, 50, 50])   # z stage at 150
 
 A wrong-length sequence raises at construction, not at the first servo write.
 
-The z stage is the only DOF carrying a gravity load, and it needs more torque
-than the six horizontal ones. Measured on `hand_2`: at torque 50 it does not
-lift at all (15.2mm to 16.3mm against a 35mm target); at 150 it tracks. Pressing
-*down* at 50 works and `caps_measured` relies on it, so `STANDARD_TORQUE` raises
-a floor for the lifting direction rather than correcting the whole axis.
+Mixing values costs nothing. A sync-write is one broadcast packet in which each
+servo reads its own slice, so `SyncWritePosEx` takes `Speed[]`, `ACC[]` and
+`Torque[]` as per-servo arrays — seven different torques and seven identical
+ones are the same packet and the same time on the wire.
 
-Mixing values has a cost worth knowing. The control loop sends one sync-write
-packet for all servos when the gains are uniform and one packet per servo when
-they are not, measured at 3.1ms against 5.4ms per step. Both fit the 20ms budget
-at 50Hz, so this is affordable, but it would bind above roughly 180Hz.
+The z stage is the only DOF carrying a gravity load, and it needs more torque
+than the six horizontal ones. Bisected on `hand_2`, lifting 30mm to 35mm and
+measuring travel after 3 seconds:
+
+| torque | 150 | 200 | 250 | 300 | 350 |
+|---|---|---|---|---|---|
+| moved (of 5.0mm) | 1.50 | 4.54 | 4.54 | 4.54 | 4.53 |
+
+The cliff is sharp: 150 stalls outright, 200 tracks fully, nothing above 200
+helps. `STANDARD_TORQUE` uses 300 — the measured floor plus margin, because the
+bisect ran unloaded and the stage exists to lift the aux gripper while it is
+holding something.
+
+Pressing *down* at 50 works and tasks rely on it, so this is a floor for the
+lifting direction rather than a correction to the whole axis.
 
 `counts_per_mm` is derived from the pitch diameter, but a real gear train is not
 its nominal drawing. After measuring a known travel distance, set it directly
@@ -252,11 +313,27 @@ actually run on servos:
   sign-magnitude encoding in the driver is exercised by real traffic.
 - Normalized `move()` actions track. Six DOFs converge to within 0.03mm; the z
   stage needs its raised torque to do so (see Motion gains above).
-- Control loop costs 3.1ms per step with uniform gains, 5.4ms with the z stage
-  differing, against a 20ms budget at 50Hz.
+- The control loop is two bus packets per step regardless of gains: one
+  sync-read covering all seven servos, one sync-write carrying per-joint
+  positions and gains. Measured on `hand_2`:
+
+  | | 7 unicast | 1 sync | |
+  |---|---|---|---|
+  | read | 1.97ms | 1.47ms | one TX replaces seven, but each servo still replies |
+  | write | 2.35ms | ~0ms | broadcast, unacked, so nothing to wait for |
+
+  Sync-read saves less than it looks like it should — it eliminates the seven
+  request packets, not the seven replies. Sync-write is nearly free because
+  nobody ACKs a broadcast.
+- Zero offsets survived a power cycle: after replugging, six DOFs read 30.00mm
+  against offsets saved the previous session, and the z stage read 28.73mm,
+  having drooped 1.27mm under gravity when torque was cut.
 
 Not yet established:
 
+- **Zeroing does not repeat on all seven DOFs.** Two runs agree to within
+  0.05mm on five of them, disagree by 14.2mm on the z stage and 1.6mm on one
+  jaw. See Known issues.
 - **Total travel is still unmeasured.** Zeroing finds one hard stop per DOF, not
   both, so `max_mm = 60` remains an assumption. See Known issues.
 - `counts_per_mm` is still the derived value, never checked against a measured
@@ -377,6 +454,69 @@ and reports the span in counts, which is exact. Converting to millimetres needs
 `counts_per_mm`, the very value in doubt, so measure one DOF with calipers and
 set `counts_per_mm = span_counts / measured_mm`. It has not been run on hardware
 yet, and it drives every DOF into stops that zeroing never touches.
+
+**A failed read used to decode into a plausible position.** `SCS::readWord`
+returns `-1` on any failure — no reply, wrong ID, bad length, CRC mismatch — and
+`HLSCL::ReadPos` then ran its sign-magnitude decode over that `-1`. Bit 15 is
+set, so the sign branch fired and the error came back out as **+32769 counts,
+about 402mm**. The sentinel and real data shared one channel.
+
+Three guards were written against exactly this and were dead code, because the
+binding returned `int` and never `None`: `hand.py`'s `if counts is not None`,
+and both null-checks in `primitives.py`. Worst case, `wait_for_stall_counts`
+uses `confirm_count=2`, so three consecutive dropped frames read as movement 0
+and would have registered a false hard stop at 32769 — saved as a zero offset.
+
+Fixed: the driver's reads now return `None` on failure, using `getLastError()`,
+which is the channel that was there all along. The vectorized `read_positions`
+is immune by construction, since sync-read reports a missing reply through
+`syncReadPacketRx`'s return rather than in-band. **This has been reproduced by
+arithmetic, not by a live dropped frame** — no read has been observed to fail on
+this bus.
+
+**`enable()` used to command every joint to 0mm.** The loop writes the whole
+target vector each step and `target` starts as zeros, so starting the loop drove
+the hand into its hard stops before any target was set. Commanding a subset is
+what exposed it: `set_dofs({Z: 35.0})` leaves the other six "unchanged", and
+unchanged meant zero. Hit during this bring-up — six joints travelled from 29mm
+to their 0mm stops at torque 50. Fixed by seeding the target from the measured
+position in `enable()`.
+
+**Zeroing does not repeat on every DOF.** Two runs on `hand_2` gave:
+
+| DOF | run 1 | run 2 | diff | less whole turns | mm |
+|----:|------:|------:|-----:|-----------------:|---:|
+| 0 | 4293 | 4297 | +4 | +4 | 0.05 |
+| 1 | −1412 | 2687 | +4099 | +3 | 0.04 |
+| 2 | 5608 | 5611 | +3 | +3 | 0.04 |
+| 3 | 5837 | 587 | −5250 | −1154 | **−14.16** |
+| 4 | 4526 | 4394 | −132 | −132 | **−1.62** |
+| 5 | 2012 | 2008 | −4 | −4 | −0.05 |
+| 6 | 6762 | 6762 | 0 | 0 | 0.00 |
+
+Five of seven repeat to within 4 counts (0.05mm), which is the stop-finding
+working. DOF 1's +4099 is one full 4096-count revolution plus 3, so it found the
+same physical stop on a different turn number. DOF 3 and DOF 4 are real
+disagreements: 14.2mm and 1.6mm.
+
+Two separate problems sit behind this. The encoder is absolute within one turn
+but the turn number is an accumulator, so **a stored offset is not guaranteed to
+survive a power cycle** — DOF 1 is direct evidence the origin can shift by a
+whole revolution. `load_calibration()` restores offsets and sets `is_zeroed =
+True` without checking that the turn origin still holds, so a stale calibration
+would put that DOF 50mm out with no warning.
+
+DOF 3 and 4 are not wraps, so something else is moving. The suspects are stall
+detection being permissive (`stall_threshold=5` counts confirmed over two 50ms
+polls, so 0.1s of near-stillness reads as a hard stop) and DOF 3 dropping to
+rest under gravity every time torque is cut. Note also that zeroing creeps at a
+flat `zero_torque=50` for all seven DOFs and never consults the per-DOF
+`STANDARD_TORQUE` — deliberate, since pressing into a stop wants low torque, but
+DOF 3 is exactly where low torque and gravity interact.
+
+To tell the two apart: run `zeroing` twice without power-cycling in between. If
+DOF 3 repeats, it is the power-cycle turn origin. If it does not, it is false
+stall detection and `confirm_count` needs raising.
 
 **Two servo drivers.** `cartesian_hand/ft_servo_python.py` reimplements the same
 protocol as the compiled extension and is unused. See Layout above.
