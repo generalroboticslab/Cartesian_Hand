@@ -45,11 +45,26 @@ class Dof:
 
 @dataclass
 class Motion:
-    """Servo motion defaults. Torque, speed and acc are raw servo units."""
+    """Servo motion defaults. Torque, speed and acc are raw servo units.
+
+    Each gain is a scalar or a per-DOF sequence of length n_dof. A scalar means
+    "same for every DOF" and broadcasts; a sequence lets one axis differ, which
+    the z stage needs because it is the only DOF carrying a gravity load.
+
+    Stored as plain ints/lists rather than arrays so the config still
+    round-trips through JSON in to_dict/from_dict. CartesianHand broadcasts
+    them to arrays once at construction.
+
+    Keeping every DOF on the same value is not just tidiness: the control loop
+    sends one sync-write packet for all servos when the gains are uniform and
+    falls back to one packet per servo when they are not, which measured 3.1ms
+    against 5.4ms per step. Both fit the 20ms budget at 50Hz, so differing is
+    affordable here, but it is not free.
+    """
     control_hz: float = 50.0
-    torque: int = 50          # 0-1000
-    speed: int = 300
-    acc: int = 25
+    torque: object = 50       # 0-1000, scalar or per-DOF sequence
+    speed: object = 300
+    acc: object = 25
 
 
 @dataclass
@@ -93,6 +108,22 @@ class HandConfig:
         ids = [d.servo_id for d in self.dofs]
         if len(set(ids)) != len(ids):
             raise ValueError(f"[{self.name}] duplicate servo_id in {ids}")
+        # Motion cannot check its own vector lengths: it does not know n_dof.
+        # Catch a wrong-length gain here rather than at the first servo write.
+        for gain in ("torque", "speed", "acc"):
+            self.gain_vector(gain)
+
+    def gain_vector(self, gain: str) -> np.ndarray:
+        """One motion gain as a per-DOF int array, broadcasting a scalar."""
+        value = getattr(self.motion, gain)
+        arr = np.asarray(value, dtype=int)
+        if arr.ndim == 0:
+            return np.full(self.n_dof, arr, dtype=int)
+        if arr.shape != (self.n_dof,):
+            raise ValueError(
+                f"[{self.name}] motion.{gain} has {arr.shape[0]} values, "
+                f"expected a scalar or {self.n_dof}")
+        return arr.copy()
 
     def variant(self, **changes) -> "HandConfig":
         """Copy with fields replaced, for one-off overrides like a different port."""
@@ -243,19 +274,30 @@ def standard_dofs(first_servo_id: int, travel_mm: float = 60.0) -> list:
     ]
 
 
+# The z stage lifts the aux gripper against gravity, so it cannot run at the
+# torque the six horizontal DOFs are happy with. Measured on hand_2: at 50 it
+# does not lift at all (15.2mm -> 16.3mm against a 35mm target); at 150 it
+# tracks. Pressing *down* at 50 is fine and tasks rely on it, so this is a
+# floor for the lifting direction, not a correction to the whole axis.
+STANDARD_TORQUE = [50, 50, 50, 150, 50, 50, 50]
+
+
 HAND_1 = HandConfig(
     name="hand_1",
     port="/dev/ttyACM0",
     dofs=standard_dofs(first_servo_id=0),
-    motion=Motion(control_hz=50, torque=50, speed=300, acc=25),
+    motion=Motion(control_hz=50, torque=STANDARD_TORQUE, speed=300, acc=25),
     geometry=Geometry(gear_pitch_diameter_mm=16.0, counts_per_rev=4096),
 )
 
 HAND_2 = HandConfig(
     name="hand_2",
-    port="/dev/ttyACM1",
+    # by-id, not /dev/ttyACM1: ACM numbers are handed out in plug order, so
+    # whichever hand enumerates first takes ACM0 and a fixed number silently
+    # points at the wrong hand. This path is tied to the adapter's serial.
+    port="/dev/serial/by-id/usb-1a86_USB_Single_Serial_5AE6085950-if00",
     dofs=standard_dofs(first_servo_id=7),
-    motion=Motion(control_hz=50, torque=50, speed=300, acc=25),
+    motion=Motion(control_hz=50, torque=STANDARD_TORQUE, speed=300, acc=25),
     geometry=Geometry(gear_pitch_diameter_mm=16.0, counts_per_rev=4096),
 )
 

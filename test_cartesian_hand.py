@@ -45,6 +45,30 @@ def test_config_validation():
         pass
 
 
+def test_gain_vector():
+    dofs = [Dof(i, "x", 1) for i in range(3)]
+
+    scalar = HandConfig(name="s", port="/dev/null", dofs=dofs,
+                        motion=Motion(torque=50))
+    assert scalar.gain_vector("torque").tolist() == [50, 50, 50], "scalar did not broadcast"
+
+    per_dof = HandConfig(name="v", port="/dev/null", dofs=dofs,
+                         motion=Motion(torque=[50, 150, 50]))
+    assert per_dof.gain_vector("torque").tolist() == [50, 150, 50], "vector not passed through"
+
+    # The caller gets a copy: CartesianHand mutates this array via set_gains,
+    # and the shared HAND_* configs are module-level singletons.
+    per_dof.gain_vector("torque")[0] = 999
+    assert per_dof.gain_vector("torque").tolist() == [50, 150, 50], "gain_vector aliases config"
+
+    try:
+        HandConfig(name="bad", port="/dev/null", dofs=dofs,
+                   motion=Motion(torque=[50, 150]))
+        raise AssertionError("wrong-length gain accepted")
+    except ValueError:
+        pass
+
+
 def test_counts_roundtrip():
     cfg = get_hand("hand_1")
     for dof_id in range(cfg.n_dof):

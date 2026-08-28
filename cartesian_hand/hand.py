@@ -15,7 +15,7 @@ from datetime import datetime
 
 import numpy as np
 
-from .driver import open_driver
+from .driver import MockServo, open_driver
 from .hands import HandConfig
 
 
@@ -119,6 +119,13 @@ class CartesianHand:
         self.servo = driver if driver is not None else open_driver(config.port, mock=mock)
         self.control_hz = config.motion.control_hz
 
+        # Offsets from a mock run are the mock's hard-stop constants, not a
+        # measurement, so they must never load onto the real hand. They are
+        # still worth persisting (task development, self-checks), so key them
+        # separately rather than refusing to save.
+        self.calib_key = (f"{self.name}_mock" if isinstance(self.servo, MockServo)
+                          else self.name)
+
         self.lock = threading.Lock()
         # Separate from `lock`, which guards the state arrays. This one guards
         # start/stop so two callers cannot race enable() into two loop threads
@@ -130,10 +137,11 @@ class CartesianHand:
         self.target = np.zeros(self.n_dof, dtype=float)
         self.actual = np.zeros(self.n_dof, dtype=float)
 
-        m = config.motion
-        self._speed = np.full(self.n_dof, m.speed, dtype=int)
-        self._acc = np.full(self.n_dof, m.acc, dtype=int)
-        self._torque = np.full(self.n_dof, m.torque, dtype=int)
+        # Each gain is scalar-or-per-DOF in the config; broadcast once here so
+        # the loop only ever sees arrays.
+        self._speed = config.gain_vector("speed")
+        self._acc = config.gain_vector("acc")
+        self._torque = config.gain_vector("torque")
 
         self.running = False
         self._released = False
@@ -149,16 +157,16 @@ class CartesianHand:
     # ── Calibration ───────────────────────────────────────────────────────────
 
     def load_calibration(self) -> bool:
-        offsets = load_offsets(self.name, self.n_dof)
+        offsets = load_offsets(self.calib_key, self.n_dof)
         if offsets is None:
             return False
         self.zero_offset[:] = offsets
         self.is_zeroed = True
-        print(f"[{self.name}] loaded zero offsets ({offset_timestamp(self.name)})")
+        print(f"[{self.name}] loaded zero offsets ({offset_timestamp(self.calib_key)})")
         return True
 
     def save_calibration(self) -> str:
-        return save_offsets(self.name, self.zero_offset)
+        return save_offsets(self.calib_key, self.zero_offset)
 
     def require_zeroed(self):
         if not self.is_zeroed:

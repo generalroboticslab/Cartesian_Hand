@@ -157,7 +157,11 @@ class ScanCmd:
             print(f"scanning IDs {self.start_id}-{self.end_id}: found {found}")
             for sid in found:
                 volt = bus.get_voltage(sid)
-                print(f"  ID {sid:>3}: pos={bus.get_position(sid)} "
+                # read_position, not get_position: the latter serves the async
+                # poll cache, which reads 0 until start_poll runs. The mock
+                # driver aliases the two, so this only ever showed up on real
+                # hardware, as every servo reporting position 0.
+                print(f"  ID {sid:>3}: pos={bus.read_position(sid)} "
                       f"volt={'?' if volt is None else f'{volt / 10:.1f}V'} "
                       f"temp={bus.get_temperature(sid)}C")
         finally:
