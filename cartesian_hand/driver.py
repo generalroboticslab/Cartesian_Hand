@@ -121,8 +121,12 @@ class MockServo:
         return True
 
     def set_positions(self, sids, positions, speed=None, acc=None, torque=None):
-        for sid, p in zip(sids, positions):
-            self.set_position(sid, p, speed, acc, torque)
+        """Mirrors the real driver: each gain is a scalar or one value per servo."""
+        n = len(sids)
+        per_servo = lambda g: g if isinstance(g, (list, tuple)) else [g] * n
+        for sid, p, s, a, t in zip(sids, positions, per_servo(speed),
+                                   per_servo(acc), per_servo(torque)):
+            self.set_position(sid, p, s, a, t)
         return True
 
     def set_speed(self, sid, speed):
@@ -159,6 +163,11 @@ class MockServo:
         return self.read_position(sid)
 
     def get_positions(self, sids):
+        return [self.read_position(s) for s in sids]
+
+    def read_positions(self, sids):
+        """Vectorized live read. The mock never drops a frame, so no None here;
+        tests that need a dropped read patch this."""
         return [self.read_position(s) for s in sids]
 
     def read_speed(self, sid):

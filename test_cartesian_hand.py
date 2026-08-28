@@ -449,6 +449,105 @@ def test_every_task_exposes_a_config():
         assert params[:2] == ["hand", "cfg"], f"{name}.run signature is {params}"
 
 
+def test_vector_conversion_matches_per_dof():
+    """The loop converts whole vectors; tasks still convert one DOF at a time."""
+    with _mock_hand() as hand:
+        cfg = hand.config
+        offsets = np.arange(cfg.n_dof, dtype=int) * 137 - 300
+        counts = np.arange(cfg.n_dof, dtype=int) * 411 + 50
+
+        vector_mm = cfg.counts_to_mm_all(counts, offsets)
+        for d in range(cfg.n_dof):
+            scalar_mm = cfg.counts_to_mm(d, int(counts[d]), int(offsets[d]))
+            assert abs(vector_mm[d] - scalar_mm) < 1e-9, \
+                f"DOF {d}: vector {vector_mm[d]} vs scalar {scalar_mm}"
+
+        mm = np.linspace(0.0, 55.0, cfg.n_dof)
+        vector_counts = cfg.mm_to_counts_all(mm, offsets)
+        for d in range(cfg.n_dof):
+            scalar_counts = cfg.mm_to_counts(d, float(mm[d]), int(offsets[d]))
+            assert vector_counts[d] == scalar_counts, \
+                f"DOF {d}: vector {vector_counts[d]} vs scalar {scalar_counts}"
+
+
+def test_dropped_read_does_not_move_state():
+    """A servo that fails to answer must keep its last position, not gain a new one.
+
+    ReadPos decodes the SDK's -1 error into +32769 counts (~402mm), so before
+    the driver reported failures as None this wrote a plausible-looking but
+    invented position straight into the state vector.
+    """
+    with _mock_hand() as hand:
+        hand.set_pos([25.0] * hand.n_dof, timeout=5.0, tolerance=1.0)
+        # Stop the loop first: it would race the manual steps below and refresh
+        # the very DOF the test is checking stayed put.
+        hand.stop_loop()
+        hand._step()
+        settled = hand.positions.copy()
+
+        real = hand.servo.read_positions
+        dropped = 2
+        hand.servo.read_positions = lambda sids: [
+            None if i == dropped else v for i, v in enumerate(real(sids))]
+        try:
+            # Move the target so a live DOF demonstrably tracks while the
+            # dropped one holds; otherwise a frozen state vector would pass too.
+            hand.target[:] = 40.0
+            for _ in range(5):
+                hand._step()
+            after = hand.positions
+        finally:
+            hand.servo.read_positions = real
+
+        assert after[dropped] == settled[dropped], \
+            f"dropped DOF moved {settled[dropped]} -> {after[dropped]}"
+        assert after[0] != settled[0], \
+            "no DOF moved at all, so holding proves nothing"
+
+
+def test_enable_holds_position_instead_of_commanding_zero():
+    """enable() must seed the target from the hardware.
+
+    The loop writes the whole target vector every step and target starts as
+    zeros, so without seeding the first step drives every joint to 0mm — which
+    on real hardware means into the hard stops.
+    """
+    with _mock_hand() as hand:
+        # Park somewhere clearly away from both zero and the stops.
+        hand.set_pos([25.0] * hand.n_dof, timeout=5.0, tolerance=1.0)
+        hand.stop_loop()
+        parked = hand.positions.copy()
+
+        hand.target[:] = 0.0          # what construction leaves behind
+        hand.enable()
+        time.sleep(0.2)
+
+        assert np.allclose(hand.targets, parked, atol=1.0), \
+            f"enable() did not hold: target {hand.targets} vs parked {parked}"
+        assert np.allclose(hand.positions, parked, atol=1.0), \
+            f"hand moved on enable: {hand.positions} vs {parked}"
+
+
+def test_per_dof_gains_ride_in_one_write():
+    """Differing gains must not fall back to one packet per servo."""
+    with _mock_hand() as hand:
+        hand.set_gains([3], torque=300)          # z differs from the rest
+        calls = []
+        real = hand.servo.set_positions
+        hand.servo.set_positions = lambda *a, **k: (calls.append((a, k)), real(*a, **k))[1]
+        try:
+            hand._step()
+        finally:
+            hand.servo.set_positions = real
+
+        assert len(calls) == 1, f"expected one sync write, got {len(calls)}"
+        (_, _, speed, acc, torque), _ = calls[0]
+        assert torque[3] == 300, f"per-DOF torque lost: {torque}"
+        assert torque[0] == hand.config.gain_vector("torque")[0], \
+            f"other DOFs disturbed: {torque}"
+        assert len(speed) == hand.n_dof and len(acc) == hand.n_dof
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

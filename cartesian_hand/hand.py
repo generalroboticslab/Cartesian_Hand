@@ -180,11 +180,43 @@ class CartesianHand:
         with self._lifecycle:
             if self.running:
                 return
+            # Seed the target from where the hand actually is. The loop writes
+            # the whole target vector every step, and target starts as zeros, so
+            # without this the first step commands every joint to 0mm — driving
+            # the entire hand into the hard stops the instant the loop starts.
+            # Commanding a subset (set_dofs on one DOF, hold() on the jaws) is
+            # what exposes it: the DOFs left alone are not left where they are,
+            # they are left at zero.
+            self._seed_target_from_hardware()
             self.servo.enable_torques(self.config.servo_ids, True)
             self.running = True
             self._released = False
             self._thread = threading.Thread(target=self._control_loop, daemon=True)
             self._thread.start()
+
+    def _seed_target_from_hardware(self):
+        """Point the target vector at the current position, so enabling holds."""
+        if not self.is_zeroed:
+            # No offsets means no mm, so there is nothing meaningful to seed.
+            # set_pos/move both require_zeroed before reaching enable(), so the
+            # only way here is a caller driving the loop unzeroed on purpose.
+            return
+        raw = self.servo.read_positions(self.config.servo_ids)
+        ok = np.array([c is not None for c in raw])
+        if not ok.any():
+            raise RuntimeError(
+                f"[{self.name}] no servo answered while seeding the target; "
+                f"refusing to start the control loop")
+        counts = np.array([c if c is not None else 0 for c in raw], dtype=float)
+        mm = self.config.counts_to_mm_all(counts, self.zero_offset)
+        with self.lock:
+            self.actual[ok] = mm[ok]
+            self.target[ok] = mm[ok]
+            if not ok.all():
+                # A joint we could not read gets its target left as-is rather
+                # than guessed; report it instead of silently commanding it.
+                print(f"[{self.name}] could not read DOFs "
+                      f"{[d for d in range(self.n_dof) if not ok[d]]} while seeding")
 
     def stop_loop(self):
         """Stop the control loop but leave torque on, holding the last target.
@@ -423,13 +455,24 @@ class CartesianHand:
             time.sleep(max(0.0, period - (time.time() - t0)))
 
     def _step(self):
+        """One control step: read the joint vector, write the joint vector.
+
+        Two bus packets regardless of gains. The servos are addressed as one
+        robot rather than seven devices, which is also how the twin sees them.
+        """
         cfg = self.config
-        for d in range(self.n_dof):
-            counts = self.servo.read_position(cfg[d].servo_id)
-            if counts is not None:
-                mm = cfg.counts_to_mm(d, counts, self.zero_offset[d])
-                with self.lock:
-                    self.actual[d] = mm
+        sids = cfg.servo_ids
+
+        # One sync-read TX covers every servo. A servo that does not answer
+        # comes back None and keeps its previous value: a stale reading is
+        # recoverable, a fabricated one silently corrupts the state vector.
+        raw = self.servo.read_positions(sids)
+        ok = np.array([c is not None for c in raw])
+        if ok.any():
+            counts = np.array([c if c is not None else 0 for c in raw], dtype=float)
+            mm = cfg.counts_to_mm_all(counts, self.zero_offset)
+            with self.lock:
+                self.actual[ok] = mm[ok]
 
         with self.lock:
             target = self.target.copy()
@@ -437,19 +480,12 @@ class CartesianHand:
             acc = self._acc.copy()
             torque = self._torque.copy()
 
-        sids = cfg.servo_ids
-        counts = [cfg.mm_to_counts(d, float(target[d]), self.zero_offset[d])
-                  for d in range(self.n_dof)]
-
-        uniform = (speed.min() == speed.max() and acc.min() == acc.max()
-                   and torque.min() == torque.max())
-        if uniform:
-            self.servo.set_positions(sids, counts,
-                                     int(speed[0]), int(acc[0]), int(torque[0]))
-        else:
-            for d in range(self.n_dof):
-                self.servo.set_position(sids[d], counts[d],
-                                        int(speed[d]), int(acc[d]), int(torque[d]))
+        # Per-servo gains ride in the same sync-write packet as the positions,
+        # so a jaw squeezing at one torque and a stage lifting at another cost
+        # exactly one packet between them.
+        self.servo.set_positions(
+            sids, cfg.mm_to_counts_all(target, self.zero_offset).tolist(),
+            speed.tolist(), acc.tolist(), torque.tolist())
 
 
 def connect(hand: str = None, mock: bool = False, port: str = None,

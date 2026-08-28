@@ -55,11 +55,10 @@ class Motion:
     round-trips through JSON in to_dict/from_dict. CartesianHand broadcasts
     them to arrays once at construction.
 
-    Keeping every DOF on the same value is not just tidiness: the control loop
-    sends one sync-write packet for all servos when the gains are uniform and
-    falls back to one packet per servo when they are not, which measured 3.1ms
-    against 5.4ms per step. Both fit the 20ms budget at 50Hz, so differing is
-    affordable here, but it is not free.
+    Differing gains are free. SyncWritePosEx carries Speed[]/ACC[]/Torque[] as
+    per-servo arrays, because a sync-write is one broadcast packet in which
+    each servo reads its own slice, so seven different torques and seven
+    identical ones are the same packet and the same time on the wire.
     """
     control_hz: float = 50.0
     torque: object = 50       # 0-1000, scalar or per-DOF sequence
@@ -147,6 +146,10 @@ class HandConfig:
     def upper(self) -> np.ndarray:
         return np.array([d.max_mm for d in self.dofs], dtype=float)
 
+    @property
+    def orientations(self) -> np.ndarray:
+        return np.array([d.orientation for d in self.dofs], dtype=int)
+
     def dofs_on(self, axis: str) -> list:
         """DOF ids driving a given axis. Lets tasks say 'the y jaws' not '[0, 4]'."""
         return [i for i, d in enumerate(self.dofs) if d.axis == axis]
@@ -168,6 +171,19 @@ class HandConfig:
     def mm_to_counts(self, dof_id: int, mm: float, zero_offset) -> int:
         return int(zero_offset
                    + mm * self.geometry.counts_per_mm * self.dofs[dof_id].orientation)
+
+    # Whole-vector forms of the two above, for the control loop. The hand is a
+    # robot with a joint vector, so the loop converts all DOFs at once rather
+    # than looping. The scalar versions stay for callers holding one DOF.
+
+    def counts_to_mm_all(self, counts, zero_offsets) -> np.ndarray:
+        return ((np.asarray(counts, dtype=float) - np.asarray(zero_offsets, dtype=float))
+                * self.orientations / self.geometry.counts_per_mm)
+
+    def mm_to_counts_all(self, mm, zero_offsets) -> np.ndarray:
+        return (np.asarray(zero_offsets, dtype=float)
+                + np.asarray(mm, dtype=float)
+                * self.geometry.counts_per_mm * self.orientations).astype(int)
 
     def clamp(self, positions_mm) -> np.ndarray:
         return np.clip(np.asarray(positions_mm, dtype=float), self.lower, self.upper)
@@ -275,11 +291,20 @@ def standard_dofs(first_servo_id: int, travel_mm: float = 60.0) -> list:
 
 
 # The z stage lifts the aux gripper against gravity, so it cannot run at the
-# torque the six horizontal DOFs are happy with. Measured on hand_2: at 50 it
-# does not lift at all (15.2mm -> 16.3mm against a 35mm target); at 150 it
-# tracks. Pressing *down* at 50 is fine and tasks rely on it, so this is a
-# floor for the lifting direction, not a correction to the whole axis.
-STANDARD_TORQUE = [50, 50, 50, 150, 50, 50, 50]
+# torque the six horizontal DOFs are happy with. Bisected on hand_2, lifting
+# 30mm -> 35mm and measuring travel after 3s:
+#
+#     torque  150   200   250   300   350
+#     moved  1.50  4.54  4.54  4.54  4.53   (mm, of 5.0 commanded)
+#
+# The cliff is sharp: 150 stalls outright, 200 tracks fully, and nothing above
+# 200 helps. 300 is the measured floor plus margin, because the point of the
+# stage is to lift the aux gripper while it is holding something, and the
+# bisect above was run unloaded.
+#
+# Pressing *down* at 50 is fine and tasks rely on it, so this is a floor for
+# the lifting direction, not a correction to the whole axis.
+STANDARD_TORQUE = [50, 50, 50, 300, 50, 50, 50]
 
 
 HAND_1 = HandConfig(
