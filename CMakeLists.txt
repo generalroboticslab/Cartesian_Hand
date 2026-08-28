@@ -23,22 +23,38 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
 find_package(nanobind CONFIG REQUIRED)
 
-# Use vcpkg-provided CSerialPort if available; otherwise fetch from source.
+# Servo driver sources come from the hardware_bindings submodule rather than a
+# copy in this repo. They used to be duplicated under src/, which drifted: the
+# fork gained write_id and a position-encoding fix that were never pushed back,
+# and edited INST.h in a way that changed the RESET and CAL opcodes away from
+# the values the vendor SCS.cpp expects. Both fixes are upstream now, so there
+# is one copy again.
+#
+# Only ft_servo/ is compiled here. The submodule's own top-level CMakeLists also
+# builds motor/ and imu/ and requires Eigen3, CSerialPort and fmt; this gripper
+# uses none of them, so we name the sources directly instead of add_subdirectory.
+set(FT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/hardware_bindings/ft_servo)
 
-set(FT_SRC src/HLSCL.cpp src/SCS.cpp src/SCSerial.cpp)
+if(NOT EXISTS ${FT_DIR}/ft_servo_ext.cpp)
+  message(FATAL_ERROR
+    "hardware_bindings/ft_servo is empty. Run:\n"
+    "  git submodule update --init --recursive")
+endif()
+
+set(FT_SRC ${FT_DIR}/HLSCL.cpp ${FT_DIR}/SCS.cpp ${FT_DIR}/SCSerial.cpp)
 
 nanobind_add_module(
     ft_servo_ext
     STABLE_ABI
-    src/ft_servo_ext.cpp
-    src/ft_servo_driver.hpp
+    ${FT_DIR}/ft_servo_ext.cpp
+    ${FT_DIR}/ft_servo_driver.hpp
     ${FT_SRC}
 )
-target_include_directories(ft_servo_ext PRIVATE src)
+target_include_directories(ft_servo_ext PRIVATE ${FT_DIR})
 
 # --- wheel install layout (used by scikit-build-core) ---
+# The extension lands inside the package so `from .ft_servo_ext import FtServo`
+# resolves directly and the search fallback in driver.py stays unused.
+# The .py files are NOT installed here: scikit-build-core packages them (see
+# wheel.packages in pyproject.toml), which is what keeps -e installs editable.
 install(TARGETS ft_servo_ext LIBRARY DESTINATION cartesian_hand)
-install(FILES __init__.py cartesian_hand.py DESTINATION cartesian_hand)
-install(DIRECTORY tasks commons DESTINATION cartesian_hand
-        PATTERN "__pycache__" EXCLUDE
-        PATTERN "*.pyc" EXCLUDE)

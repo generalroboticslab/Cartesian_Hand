@@ -176,7 +176,7 @@ class FtServo:
                 pos & 0xFF, (pos >> 8) & 0xFF,
                 torque & 0xFF, (torque >> 8) & 0xFF,
                 speed & 0xFF, (speed >> 8) & 0xFF,
-    ]
+            ]
 
         if isinstance(id, int):
             return self.write_register(id, HLS_ACC, pack(position))
@@ -345,60 +345,3 @@ class FtServo:
         self.serial.timeout = original_timeout
         return found
 
-
-# ── Demo ──────────────────────────────────────────────────────────────────────
-
-def main():
-
-    # refer to Servo port (FeeeTech) setup
-    # PORT = "/dev/ttyACM2"
-    # PORT = "/dev/ttyACMservoLeft"
-    PORT = "/dev/ttyACMservoRight"
-
-    SERVO_ID = 1
-
-    print(f"Connecting to {PORT}...")
-    servo = FtServo(PORT)
-
-    ret = servo.ping(SERVO_ID)
-    if ret is None:
-        print(f"Ping failed (ID {SERVO_ID})")
-        servo.close()
-        return
-    _, error, _ = ret
-    print(f"Ping OK (ID {SERVO_ID}, error=0x{error:02X})")
-
-    pos = servo.get_position(SERVO_ID)
-    volt = servo.get_voltage(SERVO_ID)
-    temp = servo.get_temperature(SERVO_ID)
-    print(f"  Position: {pos}  Voltage: {volt/10.0 if volt else '?'} V  Temp: {temp} C")
-
-    servo.enable_torque(SERVO_ID, True)
-
-    # targets = [
-    #         ("left", 0),
-    #         ("center", 2048),
-    #         ("right", 4095),
-    # ]
-    targets = [
-            # ("left", 500),
-            # ("center", 2048),
-        # ("calib", 0),
-        ("start", 500),
-        ("end", 2000),
-        # ("start", 500),
-    ]
-    
-    for label, target in targets:
-        print(f"Moving {label} ({target})...")
-        servo.set_position(SERVO_ID, target, speed=1000, acc=100, torque=1000)
-        time.sleep(1.5)
-        print(f"  Position: {servo.get_position(SERVO_ID)}")
-
-    servo.enable_torque(SERVO_ID, False)
-    servo.close()
-    print("Done.")
-
-
-if __name__ == "__main__":
-    main()

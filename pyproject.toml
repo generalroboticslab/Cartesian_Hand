@@ -4,14 +4,21 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "cartesian-hand"
-version = "0.1.0"
+version = "0.2.0"
 description = "7-DOF FT servo gripper controller (cartesian hand)"
 requires-python = ">=3.8"
-dependencies = ["numpy"]
+dependencies = ["numpy", "tyro>=0.9"]
 
 [project.optional-dependencies]
-reference = ["pyserial"]
+serial = ["pyserial"]          # only for ft_servo_python, the EPROM fallback driver
+
+[project.scripts]
+cartesian-hand = "cartesian_hand.__main__:main"
 
 [tool.scikit-build]
 cmake.build-type = "Release"
-wheel.packages = []
+# scikit-build-core owns the Python package so that `pip install -e .` is
+# actually editable. CMake installs only the compiled extension into it.
+# Having CMake install the .py files too baked a second copy into site-packages
+# that shadowed the repo, so edits to hands.py silently had no effect.
+wheel.packages = ["cartesian_hand"]
