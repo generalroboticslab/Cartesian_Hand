@@ -160,10 +160,80 @@ class CartesianHand:
         offsets = load_offsets(self.calib_key, self.n_dof)
         if offsets is None:
             return False
+        offsets = self._reconcile_offsets(offsets)
+        if offsets is None:
+            return False
         self.zero_offset[:] = offsets
         self.is_zeroed = True
         print(f"[{self.name}] loaded zero offsets ({offset_timestamp(self.calib_key)})")
         return True
+
+    # A servo reports (turns since power-up * counts_per_rev) + angle within the
+    # current turn. Only the second term is real: it comes off an encoder and is
+    # valid the instant power arrives. The turn count starts at zero every
+    # power-up, so a saved offset is stale by a whole number of turns, and
+    # offset % counts_per_rev is the part of it that survives.
+    #
+    # That angle is enough to place the joint exactly, but only while its travel
+    # is shorter than one turn. Then there is one position in range matching the
+    # angle and it can be computed. Once travel exceeds a turn, two positions
+    # genuinely share an angle, the servo cannot tell them apart, and neither can
+    # we -- so the honest move is to refuse and re-zero rather than pick one.
+
+    def _reconcile_offsets(self, offsets):
+        """Re-express saved offsets in the servo's current turn accumulator.
+
+        Returns usable offsets, or None if the calibration cannot be trusted and
+        the hand needs zeroing again.
+        """
+        cfg = self.config
+        turn = cfg.geometry.counts_per_rev
+        span = (cfg.upper - cfg.lower) * cfg.geometry.counts_per_mm
+
+        raw = self.servo.read_positions(cfg.servo_ids)
+        if any(c is None for c in raw):
+            # No reading means no check. Not a reason to refuse: a hand we
+            # cannot read is a hand we cannot move either, and the first real
+            # command will fail on its own with a clearer message than this one.
+            print(f"[{self.name}] could not read every servo; using saved "
+                  f"offsets unverified")
+            return offsets
+        raw = np.array(raw, dtype=int)
+
+        if (span < turn).all():
+            # How far past its zero each joint sits, in counts, from the encoder
+            # angle alone. Whatever the turn counter contributed -- to the
+            # reading and to the saved offset alike -- is a whole number of
+            # turns and vanishes in the modulo.
+            k = ((raw - offsets) * cfg.orientations) % turn
+            if (k > span).any():
+                out = [d for d in range(self.n_dof) if k[d] > span[d]]
+                print(f"[{self.name}] DOFs {out} sit outside their travel on any "
+                      f"turn, so the saved offsets do not describe this hand.")
+                return None
+            rebased = raw - k * cfg.orientations
+            shifted = [d for d in range(self.n_dof) if rebased[d] != offsets[d]]
+            if shifted:
+                print(f"[{self.name}] turn accumulator moved since zeroing; "
+                      f"rebased DOFs {shifted}")
+            return rebased
+
+        # Travel exceeds one turn, so the angle alone is ambiguous and there is
+        # nothing to recompute. All we can do is notice when the saved offsets
+        # are obviously stale, which they are whenever a joint reads outside the
+        # travel it is declared to have.
+        mm = cfg.counts_to_mm_all(raw, offsets)
+        bad = [d for d in range(self.n_dof)
+               if not (cfg[d].min_mm - 1.0 <= mm[d] <= cfg[d].max_mm + 1.0)]
+        if bad:
+            print(f"[{self.name}] saved offsets put DOFs {bad} at "
+                  f"{[round(mm[d], 1) for d in bad]}mm, outside their travel. "
+                  f"The turn accumulator has moved since zeroing.\n"
+                  f"  Travel is {span.max() / turn:.2f} turns, longer than one, "
+                  f"so the offsets cannot be recovered by arithmetic.\n"
+                  f"  Run: python -m cartesian_hand zeroing --hand {self.name}")
+            return None
+        return offsets
 
     def save_calibration(self) -> str:
         return save_offsets(self.calib_key, self.zero_offset)

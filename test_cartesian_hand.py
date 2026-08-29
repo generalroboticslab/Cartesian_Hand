@@ -13,7 +13,7 @@ import tempfile
 
 import numpy as np
 
-from cartesian_hand.hand import connect
+from cartesian_hand.hand import CartesianHand, connect
 from cartesian_hand.hands import Dof, Geometry, HandConfig, Motion, get_hand
 from cartesian_hand.policy import (
     ContractMismatch,
@@ -135,9 +135,18 @@ def test_task_registry():
     assert "primitives" not in tasks and "roles" not in tasks
 
 
-def _mock_hand(**kwargs):
+def _mock_hand(zeroed=False, **kwargs):
+    # Never load the saved calibration. Those offsets describe whichever real
+    # hand last ran zeroing on this machine, so a test that loaded them passed
+    # or failed depending on developer disk state -- and load_calibration now
+    # rejects offsets that put a joint outside its travel, which the mock's
+    # starting position does. Tests that need a movable hand ask for zeroed=True
+    # and get offsets of zero, which the mock's kinematics are defined around.
+    kwargs.setdefault("load_calibration", False)
     hand = connect("hand_1", mock=True, register_signal=False, **kwargs)
     hand.servo.time_scale = 500.0     # run the kinematic model far faster than real time
+    if zeroed:
+        hand.is_zeroed = True
     return hand
 
 
@@ -482,6 +491,75 @@ def test_every_task_exposes_a_config():
         assert params[:2] == ["hand", "cfg"], f"{name}.run signature is {params}"
 
 
+def _narrow_hand(max_mm):
+    """A mock hand whose travel is exactly what the caller asks for.
+
+    _reconcile_offsets branches on whether travel fits inside one turn, and the
+    shipped 60mm sits on the far side of that line, so both branches need a
+    config the stock ones cannot provide.
+    """
+    base = get_hand("hand_1")
+    cfg = HandConfig(
+        name="narrow", port=base.port, geometry=base.geometry, motion=base.motion,
+        dofs=[Dof(d.servo_id, d.axis, d.orientation, d.min_mm, max_mm)
+              for d in base.dofs])
+    return CartesianHand(cfg, mock=True, register_signal=False,
+                         load_calibration=False)
+
+
+def test_offsets_are_rebased_onto_the_current_turn():
+    """A power cycle zeroes the turn counter, leaving saved offsets stale by
+    whole turns. While travel is shorter than one turn, the angle within the
+    turn names the position uniquely, so the offsets follow by arithmetic and
+    the hand does not need re-zeroing.
+    """
+    with _narrow_hand(40.0) as hand:      # 40mm is 0.80 turns
+        cfg = hand.config
+        turn = cfg.geometry.counts_per_rev
+        saved = np.array([500, -500, 500, 500, -500, 500, 500])
+        parked = cfg.mm_to_counts_all(np.full(cfg.n_dof, 30.0), saved)
+
+        # Three joints come back a whole turn from where the saved offsets say.
+        # Sign is irrelevant to the servo: it accumulates raw counts either way.
+        raw = parked + np.array([0, turn, 0, -turn, 0, turn, 0])
+        hand.servo.read_positions = lambda sids: list(raw)
+
+        rebased = hand._reconcile_offsets(saved)
+        assert rebased is not None, "a determined case was refused"
+        mm = cfg.counts_to_mm_all(raw, rebased)
+        assert np.allclose(mm, 30.0, atol=0.02), f"rebased to {mm}mm, want 30mm"
+
+        # 40mm of travel is 3260 counts, so 836 counts of every turn name no
+        # reachable position. An angle landing in that gap cannot be this hand
+        # on any turn, and there is nothing to rebase onto. Parked at 30mm,
+        # +1000 counts is 12mm past the far stop and lands squarely in it.
+        nowhere = parked + cfg.orientations * 1000
+        hand.servo.read_positions = lambda sids: list(nowhere)
+        assert hand._reconcile_offsets(saved) is None, \
+            "an angle outside the travel was rebased anyway"
+
+
+def test_ambiguous_offsets_are_refused_rather_than_guessed():
+    """Past one turn of travel two real positions share an encoder angle. The
+    servo cannot tell them apart and neither can we, so the only honest answer
+    is to refuse and re-zero -- picking one would be a coin flip that silently
+    puts every later mm command a turn out.
+    """
+    with _narrow_hand(60.0) as hand:      # the shipped travel: 1.19 turns
+        cfg = hand.config
+        turn = cfg.geometry.counts_per_rev
+        saved = np.array([500, -500, 500, 500, -500, 500, 500])
+        parked = cfg.mm_to_counts_all(np.full(cfg.n_dof, 30.0), saved)
+
+        hand.servo.read_positions = lambda sids: list(parked)
+        assert hand._reconcile_offsets(saved) is not None, \
+            "offsets that place every joint inside its travel were refused"
+
+        hand.servo.read_positions = lambda sids: list(parked + turn)
+        assert hand._reconcile_offsets(saved) is None, \
+            "a stale turn accumulator was accepted"
+
+
 def test_vector_conversion_matches_per_dof():
     """The loop converts whole vectors; tasks still convert one DOF at a time."""
     with _mock_hand() as hand:
@@ -510,7 +588,7 @@ def test_dropped_read_does_not_move_state():
     the driver reported failures as None this wrote a plausible-looking but
     invented position straight into the state vector.
     """
-    with _mock_hand() as hand:
+    with _mock_hand(zeroed=True) as hand:
         hand.set_pos([25.0] * hand.n_dof, timeout=5.0, tolerance=1.0)
         # Stop the loop first: it would race the manual steps below and refresh
         # the very DOF the test is checking stayed put.
@@ -545,7 +623,7 @@ def test_enable_holds_position_instead_of_commanding_zero():
     zeros, so without seeding the first step drives every joint to 0mm — which
     on real hardware means into the hard stops.
     """
-    with _mock_hand() as hand:
+    with _mock_hand(zeroed=True) as hand:
         # Park somewhere clearly away from both zero and the stops.
         hand.set_pos([25.0] * hand.n_dof, timeout=5.0, tolerance=1.0)
         hand.stop_loop()
@@ -567,7 +645,7 @@ def test_set_pos_accepts_per_dof_gains():
     An earlier revision only accepted scalars, so passing m.torque (a list,
     since Motion was vectorized) silently TypeError'd. Tasks rely on this.
     """
-    with _mock_hand() as hand:
+    with _mock_hand(zeroed=True) as hand:
         per_dof = [50, 50, 50, 300, 50, 50, 50]
         hand.set_pos([20.0] * hand.n_dof, torque=per_dof, wait=False)
         got = [hand.gains(d)["torque"] for d in range(hand.n_dof)]
