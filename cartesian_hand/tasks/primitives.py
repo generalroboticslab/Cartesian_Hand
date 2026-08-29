@@ -11,15 +11,23 @@ import time
 import numpy as np
 
 
-def wait_for_stall(hand, dof_ids, stall_threshold: float = 0.5,
+def wait_for_stall(hand, dof_ids, stall_speed: float = 0.3,
                    confirm_count: int = 3, timeout: float = 10.0,
-                   poll: float = 0.05, label: str = "stall") -> dict:
+                   poll: float = 0.1, label: str = "stall") -> dict:
     """Block until every DOF stops moving. Returns {dof_id: position_mm}.
 
-    A DOF counts as stalled once it moves less than stall_threshold mm for
+    A DOF counts as stalled once it moves slower than stall_speed mm/s for
     confirm_count consecutive polls. DOFs still moving at timeout are reported
     at their last position, so callers always get an entry for every DOF and
     never have to handle a partial dict.
+
+    The threshold is a rate, not a per-poll distance, because a per-poll
+    distance silently depends on the poll interval. It was 0.5mm per 0.05s
+    poll, which is 10mm/s -- an order of magnitude faster than anything this
+    hand commands, so every DOF read as stalled on the third poll and approach()
+    returned its starting position as the contact point. The gap is now wide in
+    both directions: creeping at speed=50 is 0.61mm/s, well above the threshold,
+    while one count of encoder noise over a 0.1s poll is 0.12mm/s, well below.
     """
     dof_ids = list(dof_ids)
     prev = {d: hand.positions[d] for d in dof_ids}
@@ -36,12 +44,16 @@ def wait_for_stall(hand, dof_ids, stall_threshold: float = 0.5,
                 stalled[d] = pos[d]
             break
 
+        t0 = time.time()
         time.sleep(poll)
+        # Measured, not assumed: a slow bus read stretches the interval, and
+        # dividing by the nominal poll would read that as extra speed.
+        elapsed = max(time.time() - t0, 1e-6)
         current = hand.positions
         for d in dof_ids:
             if d in stalled:
                 continue
-            if abs(current[d] - prev[d]) < stall_threshold:
+            if abs(current[d] - prev[d]) / elapsed < stall_speed:
                 consecutive[d] += 1
                 if consecutive[d] >= confirm_count:
                     stalled[d] = current[d]

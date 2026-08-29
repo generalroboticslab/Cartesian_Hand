@@ -170,6 +170,31 @@ def test_gains_are_per_dof():
         assert hand.gains(1)["torque"] == 42
 
 
+def test_creeping_dof_is_not_reported_as_stalled():
+    """A DOF still travelling must not be reported as contact.
+
+    wait_for_stall used to take a per-poll distance, defaulting to 0.5mm over a
+    0.05s poll. That is 10mm/s, faster than any speed this hand commands, so
+    every DOF read as stalled on the third poll and approach() returned the
+    position it started from as the contact point.
+    """
+    from cartesian_hand.tasks.primitives import wait_for_stall
+
+    with _mock_hand(load_calibration=False) as hand:
+        hand.is_zeroed = True
+        hand.set_pos({0: 40.0}, speed=300, timeout=10.0)
+
+        # Creep speed, slowed so the DOF is unambiguously mid-travel while
+        # wait_for_stall is looking at it.
+        hand.servo.time_scale = 8.0
+        hand.set_pos({0: 35.0}, speed=50, wait=False)
+        stalled = wait_for_stall(hand, [0], timeout=8.0)
+
+        assert stalled[0] < 37.0, (
+            f"reported contact at {stalled[0]:.1f}mm, but the DOF was commanded "
+            f"from 40mm to 35mm -- it stalled before it moved")
+
+
 def test_set_pos_accepts_a_mapping():
     """The mapping form must command exactly the DOFs it names."""
     with _mock_hand(load_calibration=False) as hand:

@@ -460,6 +460,27 @@ and reports the span in counts, which is exact. Converting to millimetres needs
 set `counts_per_mm = span_counts / measured_mm`. It has not been run on hardware
 yet, and it drives every DOF into stops that zeroing never touches.
 
+**Contact detection never detected contact.** `wait_for_stall` took its
+threshold as a distance per poll, defaulting to 0.5mm over a 0.05s poll. That is
+10mm/s. The fastest this hand moves is `speed=300`, which is 3.7mm/s, and
+`approach` creeps at 50, which is 0.61mm/s — so every DOF measured as stalled on
+the third poll, roughly 0.15s in, before it had gone anywhere.
+
+`approach()` therefore returned the position it started from. Since
+`caps_contact_based` sizes its grip from that return value, every bottle and cap
+radius it has ever printed was the pre-probe jaw position, not a measurement.
+Contact-based sizing has never worked; it just never announced the failure.
+
+Fixed by making the threshold a rate. Verified on `hand_2`: a jaw commanded from
+29.7mm to 12.0mm now reports 12.0, and closing to the hard stop reports 0.0.
+Both used to report 29.7.
+
+The counts-level variant `wait_for_stall_counts`, which zeroing uses, has the
+same shape but sits just inside its margin: 5 counts per 0.1s poll against a
+creep that covers exactly 5 counts in that time. It works — zeroing is
+reproducible on hardware — but it is one speed change away from the same
+failure, and should get the same rate treatment.
+
 **A failed read used to decode into a plausible position.** `SCS::readWord`
 returns `-1` on any failure — no reply, wrong ID, bad length, CRC mismatch — and
 `HLSCL::ReadPos` then ran its sign-magnitude decode over that `-1`. Bit 15 is
