@@ -306,6 +306,23 @@ def standard_dofs(first_servo_id: int, travel_mm: float = 60.0) -> list:
 # the lifting direction, not a correction to the whole axis.
 STANDARD_TORQUE = [50, 50, 50, 300, 50, 50, 50]
 
+# Creep torque used by zeroing. Separate from the motion gains above because
+# zeroing presses each DOF into its hard stop and a stall is the signal, not a
+# fault — too much torque binds before the stop, too little stalls short of it.
+#
+#   jaws (y)    50   flat 50 was already right for these.
+#   fingers (x) 30   at 50 the lower left finger (DOF 1) registered a stall
+#                   several hundred counts before the end of travel. At 30 the
+#                   full sequence reaches it: -102 and -108 on two runs of
+#                   hand_2, and the hand reads 30.0mm at mid travel afterwards.
+#   z stage     150  at 50 it stops in mid-air short of the stop, 150 reaches
+#                   it. Seeking direction only; STANDARD_TORQUE needs 300 to
+#                   lift the stage, which was measured separately.
+#
+# Measured on hand_2 only. Another hand may want its own numbers, which is what
+# --zero-torque is for while working one out.
+ZEROING_TORQUE = [50, 30, 30, 150, 50, 30, 30]
+
 
 HAND_1 = HandConfig(
     name="hand_1",

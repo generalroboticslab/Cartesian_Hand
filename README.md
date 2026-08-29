@@ -313,6 +313,11 @@ actually run on servos:
   sign-magnitude encoding in the driver is exercised by real traffic.
 - Normalized `move()` actions track. Six DOFs converge to within 0.03mm; the z
   stage needs its raised torque to do so (see Motion gains above).
+- Zeroing uses per-DOF creep torque (`hands.ZEROING_TORQUE`) — fingers at 30,
+  z at 150, jaws at 50 — instead of a flat 50 that stalled the fingers short of
+  their stops and left z in mid-air. After a full zeroing on `hand_2`, all seven
+  DOFs park at mid travel and read 29.7-30.0mm against the new offsets. Two
+  consecutive runs agree to within 7 counts. See Known issues.
 - The control loop is two bus packets per step regardless of gains: one
   sync-read covering all seven servos, one sync-write carrying per-joint
   positions and gains. Measured on `hand_2`:
@@ -482,41 +487,43 @@ unchanged meant zero. Hit during this bring-up — six joints travelled from 29m
 to their 0mm stops at torque 50. Fixed by seeding the target from the measured
 position in `enable()`.
 
-**Zeroing does not repeat on every DOF.** Two runs on `hand_2` gave:
+**Zeroing crept at a flat torque that was wrong for three DOFs.** Until this
+revision, `zeroing` used `zero_torque=50` for every DOF. Three of the seven need
+something different:
 
-| DOF | run 1 | run 2 | diff | less whole turns | mm |
-|----:|------:|------:|-----:|-----------------:|---:|
-| 0 | 4293 | 4297 | +4 | +4 | 0.05 |
-| 1 | −1412 | 2687 | +4099 | +3 | 0.04 |
-| 2 | 5608 | 5611 | +3 | +3 | 0.04 |
-| 3 | 5837 | 587 | −5250 | −1154 | **−14.16** |
-| 4 | 4526 | 4394 | −132 | −132 | **−1.62** |
-| 5 | 2012 | 2008 | −4 | −4 | −0.05 |
-| 6 | 6762 | 6762 | 0 | 0 | 0.00 |
+- **Fingers (DOF 1, 2, 5, 6)** register a stall short of the end of travel at
+  50 and reach it at 30. Lower left finger (DOF 1) was the visible case: it
+  stalled around 644 counts at 50, and lands at −102/−108 (two runs) at 30,
+  roughly 9mm further into travel.
+- **Z stage (DOF 3)** stops in mid-air short of the stop at 50 and reaches it
+  at 150. Not the same number as `STANDARD_TORQUE[3] = 300`, which is the
+  torque needed to *lift* the stage; this is the seeking direction only.
+- **Jaws (DOF 0, 4)** were the only DOFs where flat-50 was right.
 
-Five of seven repeat to within 4 counts (0.05mm), which is the stop-finding
-working. DOF 1's +4099 is one full 4096-count revolution plus 3, so it found the
-same physical stop on a different turn number. DOF 3 and DOF 4 are real
-disagreements: 14.2mm and 1.6mm.
+The mechanism behind the finger numbers is not established — binding, stiction
+and stall-detector sensitivity all fit the observation. The numbers are
+measured; the explanation would be a guess.
 
-Two separate problems sit behind this. The encoder is absolute within one turn
-but the turn number is an accumulator, so **a stored offset is not guaranteed to
-survive a power cycle** — DOF 1 is direct evidence the origin can shift by a
-whole revolution. `load_calibration()` restores offsets and sets `is_zeroed =
-True` without checking that the turn origin still holds, so a stale calibration
-would put that DOF 50mm out with no warning.
+`hands.ZEROING_TORQUE = [50, 30, 30, 150, 50, 30, 30]` is the per-DOF default.
+Pass `--zero-torque N` to broadcast a scalar (legacy behaviour) for any of the
+seven that doesn't match its default.
 
-DOF 3 and 4 are not wraps, so something else is moving. The suspects are stall
-detection being permissive (`stall_threshold=5` counts confirmed over two 50ms
-polls, so 0.1s of near-stillness reads as a hard stop) and DOF 3 dropping to
-rest under gravity every time torque is cut. Note also that zeroing creeps at a
-flat `zero_torque=50` for all seven DOFs and never consults the per-DOF
-`STANDARD_TORQUE` — deliberate, since pressing into a stop wants low torque, but
-DOF 3 is exactly where low torque and gravity interact.
+**The encoder turn-origin shift still stands.** A stored offset is not
+guaranteed to survive a power cycle: the encoder is absolute within one turn
+but the turn number is an accumulator, and a different power-up state lands
+at a different turn. `load_calibration()` sets `is_zeroed = True` from a stored
+file without checking the turn origin still holds, so a stale calibration
+could put a DOF 50mm out with no warning. Two safe moves: re-zero on every
+connect, or stamp a turn-origin sentinel into the calibration file and reject
+on mismatch. Not done.
 
-To tell the two apart: run `zeroing` twice without power-cycling in between. If
-DOF 3 repeats, it is the power-cycle turn origin. If it does not, it is false
-stall detection and `confirm_count` needs raising.
+**Bisects on individual DOFs can mislead.** Calling `zeroing --dof N` from an
+arbitrary starting position can register a friction bind partway into the
+mechanism rather than the real hard stop. The full `zeroing` run drives every
+DOF from a known starting position and finds the true end of travel. Cross-
+check by running `--dof N` after the full zeroing has parked the hand at mid
+travel — the result should match. If it doesn't, the joint has multiple stops
+or the parallel-phase path is interacting with the mechanism.
 
 **Two servo drivers.** `cartesian_hand/ft_servo_python.py` reimplements the same
 protocol as the compiled extension and is unused. See Layout above.

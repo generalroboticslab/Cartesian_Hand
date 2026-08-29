@@ -8,6 +8,7 @@ the z stage drops, which keeps the mechanism from binding on itself.
 from dataclasses import dataclass
 from typing import Optional
 
+from ..hands import ZEROING_TORQUE
 from .primitives import wait_for_stall_counts, wait_until_counts
 
 DESCRIPTION = "Zero all DOFs against their hard stops"
@@ -17,8 +18,13 @@ DESCRIPTION = "Zero all DOFs against their hard stops"
 class Config:
     dof: Optional[int] = None
     """Zero a single DOF instead of running the full sequence. Debug aid."""
-    zero_torque: int = 50
-    """Torque used while creeping into the hard stop. Keep it low."""
+    zero_torque: int = 0
+    """Override creep torque as a single scalar broadcast to every DOF.
+
+    Set to 0 to use hands.ZEROING_TORQUE per DOF (low for fingers, higher
+    for z). The legacy flat-50 is available as `--zero-torque 50` for
+    anyone who needs the old behaviour, but is wrong for fingers and z.
+    """
     creep_speed: int = 50
     """Speed used while seeking the stop."""
     save: bool = True
@@ -33,7 +39,7 @@ OVERTRAVEL_COUNTS = 10000     # far enough past the stop that the servo keeps pr
 
 
 def zero_all(hand, stall_threshold: int = 5, confirm_count: int = 2,
-             zero_torque: int = 50, creep_speed: int = 50,
+             zero_torque=None, creep_speed: int = 50,
              transit_speed: int = 100, transit_acc: int = 20,
              transit_torque: int = 400, transit_tolerance: int = 80,
              transit_timeout: float = 5.0, stall_timeout: float = 30.0,
@@ -44,6 +50,15 @@ def zero_all(hand, stall_threshold: int = 5, confirm_count: int = 2,
     move immediately; use hand.release() when done.
     """
     cfg = hand.config
+
+    # Per-DOF creep torque. zero_torque<=0 means use the per-DOF default in
+    # hands.ZEROING_TORQUE — flat-50 binds the fingers and stalls z in mid-air,
+    # flat-150 stalls the fingers further. A positive arg broadcasts a single
+    # value to every DOF, matching legacy behaviour for callers that still pass one.
+    if not zero_torque:                       # None or 0 → per-DOF default
+        per_dof_torque = list(ZEROING_TORQUE)
+    else:
+        per_dof_torque = [zero_torque] * cfg.n_dof
 
     # The control loop would fight the raw creep commands below, overwriting
     # them with its own target vector mid-approach.
@@ -68,14 +83,22 @@ def zero_all(hand, stall_threshold: int = 5, confirm_count: int = 2,
     for name, dof_ids in PHASES:
         print(f"[{hand.name}] {name}: seeking hard stop")
 
-        for d in dof_ids:
-            sid = cfg[d].servo_id
-            here = hand.servo.read_position(sid)
-            if here is None:
-                return restore(f"DOF {d} (servo {sid}) not responding, aborting.")
-            # Command far past the stop so the servo stays loaded against it.
-            hand.servo.set_position(sid, here - cfg[d].orientation * OVERTRAVEL_COUNTS,
-                                    creep_speed, transit_acc, zero_torque)
+        # One sync-write for every DOF in this phase, instead of one unicast
+        # per servo. Within-phase parallelism is mechanical: each phase moves
+        # DOFs on independent axes (fingers slide horizontally, jaws close
+        # horizontally, z drops vertically), so they reach their stops without
+        # colliding mid-stroke.
+        sids = [cfg[d].servo_id for d in dof_ids]
+        here = hand.servo.read_positions(sids)
+        if any(c is None for c in here):
+            missing = [cfg[d].servo_id for d, c in zip(dof_ids, here) if c is None]
+            return restore(f"servos {missing} not responding, aborting.")
+        targets = [int(here[i] - cfg[d].orientation * OVERTRAVEL_COUNTS)
+                   for i, d in enumerate(dof_ids)]
+        speed_v = [creep_speed] * len(dof_ids)
+        acc_v   = [transit_acc] * len(dof_ids)
+        torque_v = [per_dof_torque[d] for d in dof_ids]
+        hand.servo.set_positions(sids, targets, speed_v, acc_v, torque_v)
 
         stops = wait_for_stall_counts(hand, dof_ids, stall_threshold=stall_threshold,
                                       confirm_count=confirm_count, timeout=stall_timeout)
