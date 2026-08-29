@@ -460,6 +460,12 @@ and reports the span in counts, which is exact. Converting to millimetres needs
 set `counts_per_mm = span_counts / measured_mm`. It has not been run on hardware
 yet, and it drives every DOF into stops that zeroing never touches.
 
+This is no longer only a bookkeeping question. Travel above or below one 4096-
+count revolution decides whether stale zero offsets can be recovered
+arithmetically or the hand has to be re-zeroed after every power cycle — see
+*Saved zero offsets go stale by whole turns* below. 60mm is 1.19 turns, 50mm is
+0.99.
+
 **Contact detection never detected contact.** `wait_for_stall` took its
 threshold as a distance per poll, defaulting to 0.5mm over a 0.05s poll. That is
 10mm/s. The fastest this hand moves is `speed=300`, which is 3.7mm/s, and
@@ -475,11 +481,42 @@ Fixed by making the threshold a rate. Verified on `hand_2`: a jaw commanded from
 29.7mm to 12.0mm now reports 12.0, and closing to the hard stop reports 0.0.
 Both used to report 29.7.
 
-The counts-level variant `wait_for_stall_counts`, which zeroing uses, has the
-same shape but sits just inside its margin: 5 counts per 0.1s poll against a
-creep that covers exactly 5 counts in that time. It works — zeroing is
-reproducible on hardware — but it is one speed change away from the same
-failure, and should get the same rate treatment.
+The counts-level variant `wait_for_stall_counts`, which zeroing uses, had the
+same shape but sat just inside its margin: 5 counts per 0.1s poll against a
+creep that covers exactly 5 counts in that time. It worked — zeroing is
+reproducible on hardware — but only because the coin landed the right way up. It
+now takes counts/sec against a measured interval, defaulting to half the creep
+speed, so travelling and stalled are a factor of two apart in each direction.
+
+**Saved zero offsets go stale by whole turns.** A servo reports (turns since
+power-up × `counts_per_rev`) + the angle within the current turn. The angle
+comes off a magnetic encoder and is right the instant power arrives; the turn
+count restarts at zero. So the reading a saved offset was measured against no
+longer exists, and every mm command after a power cycle is off by some whole
+number of turns — silently, because the numbers stay plausible.
+
+Observed on `hand_2`: four DOFs read 30mm and three read a turn away, from
+offsets saved in the previous session.
+
+The angle alone places the joint exactly, provided travel is shorter than one
+turn — then only one reachable position matches it. `load_calibration` now
+recovers the offsets from that:
+
+```python
+k = ((raw - offsets) * orientation) % counts_per_rev
+rebased = raw - k * orientation
+```
+
+Everything the turn counter contributed, to the reading and to the saved offset
+alike, is a multiple of a turn and drops out of the modulo. Arithmetic, not a
+fit: there are no candidates to score.
+
+Past one turn of travel two real positions share an angle. The servo cannot tell
+them apart and neither can we, so that branch refuses and asks for zeroing.
+Which branch runs depends entirely on `max_mm`, and `max_mm` has never been
+measured: at the configured 60mm travel is 1.19 turns and offsets are
+unrecoverable, at the 50mm the CAD suggests it is 0.99 and the ambiguity does
+not exist. Running `travel` decides it.
 
 **A failed read used to decode into a plausible position.** `SCS::readWord`
 returns `-1` on any failure — no reply, wrong ID, bad length, CRC mismatch — and
