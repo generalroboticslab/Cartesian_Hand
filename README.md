@@ -62,9 +62,16 @@ afterwards, which is worth having on the bench: a ping only proves something
 answers to the new ID, while motion proves it is the servo in front of you.
 
 ```bash
-python hardware_bindings/ft_servo/change_id.py /dev/ttyACM0 7
-python hardware_bindings/ft_servo/scan.py /dev/ttyACM0
+python -m hardware_bindings.ft_servo set-id /dev/ttyACM0 7
+python -m hardware_bindings.ft_servo scan /dev/ttyACM0
+python -m hardware_bindings.ft_servo gui /dev/ttyACM0 --ids 7 8 9
 ```
+
+The submodule tools take a device path and know nothing about hands, DOFs or
+millimetres; `python -m cartesian_hand scan` is the hand-level equivalent and
+resolves the port from a hand name. They need `pip install -e
+'hardware_bindings[cli]'`, or `[gui]` for the GUI. See
+[`hardware_bindings/ft_servo/README.md`](hardware_bindings/ft_servo/README.md).
 
 Renaming writes to the servo's EPROM and survives power cycles. Once renamed,
 the only way to find a servo again is to scan for it.
@@ -420,9 +427,10 @@ cartesian_hand/
   driver.py        extension loading, MockServo
   __main__.py      the single entry point, a tyro CLI over these dataclasses
   tasks/           one module per task, auto-registered
-  ft_servo_python.py   second, unused driver: see below
 hardware_bindings/ submodule: IMU, motor and servo bindings. Only ft_servo/ is
                    compiled here, and it is the sole copy of the servo driver.
+  ft_servo/__main__.py   bench tools: scan, set-id, gui
+  ft_servo/ft_servo_python_only.py   second, unused driver: see below
 examples/          twin-to-real worked example
 ```
 
@@ -430,21 +438,22 @@ Four files, in the order you would read them: `hands.py` says what the hardware
 is, `hand.py` how to drive it, `policy.py` how a twin-developed policy reaches
 it, and `__main__.py` how to run any of it from a shell.
 
-`ft_servo_python.py` is not one of them. It is a pure-Python reimplementation of
-the same SCS wire protocol the C++ extension speaks, over `pyserial` instead of
-nanobind. Nothing imports it: `driver.py` knows only the compiled `FtServo` and
-`MockServo`, so it is reachable only by hand.
+`hardware_bindings/ft_servo/ft_servo_python_only.py` is not one of them. It is a
+pure-Python reimplementation of the same SCS wire protocol the C++ extension
+speaks, over `pyserial` instead of nanobind.
 
 ```python
-from cartesian_hand.ft_servo_python import FtServo   # needs pip install -e '.[serial]'
+from hardware_bindings.ft_servo.ft_servo_python_only import FtServo  # pip install -e '.[serial]'
 ```
 
-It existed for two EPROM operations the extension lacked. `write_id` is bound in
-C++ now, which leaves `set_position_offset` as the only thing it can do that the
-extension cannot, plus raw `unlock_eprom`/`lock_eprom`. That is 340 lines of
-second protocol implementation carried for one method — either bind
-`set_position_offset` and delete the file, or keep it and accept that two
-drivers must stay in agreement with nothing enforcing it.
+It existed for two EPROM operations the extension lacked, and `change_id.py` was
+its one importer. `write_id` is bound in C++ now and the bench tools were merged
+into `ft_servo/__main__.py` on the compiled driver, so nothing imports it at all:
+404 lines of second protocol implementation, reachable only by typing the path
+above. `set_position_offset` plus raw `unlock_eprom`/`lock_eprom` are the only
+things it can still do that the extension cannot. Either bind those three and
+delete the file, or keep it and accept that two drivers must stay in agreement
+with nothing enforcing it.
 
 ## Known issues
 
@@ -591,9 +600,10 @@ check by running `--dof N` after the full zeroing has parked the hand at mid
 travel — the result should match. If it doesn't, the joint has multiple stops
 or the parallel-phase path is interacting with the mechanism.
 
-**Two servo drivers.** `cartesian_hand/ft_servo_python.py` reimplements the same
-protocol as the compiled extension and is unused. See Layout above.
+**Two servo drivers.** `hardware_bindings/ft_servo/ft_servo_python_only.py`
+reimplements the same protocol as the compiled extension and now has no
+importers at all. See Layout above.
 
-**`set_position_offset` is not bound.** It exists in `ft_servo_python.py` but
-not in the C++ extension, so writing a servo's position offset to EPROM means
-dropping to the Python driver by hand.
+**`set_position_offset` is not bound.** It exists in `ft_servo_python_only.py`
+but not in the C++ extension, so writing a servo's position offset to EPROM
+means dropping to the Python driver by hand.

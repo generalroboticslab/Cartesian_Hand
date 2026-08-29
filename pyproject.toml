@@ -10,7 +10,7 @@ requires-python = ">=3.8"
 dependencies = ["numpy", "tyro>=0.9"]
 
 [project.optional-dependencies]
-serial = ["pyserial"]          # only for ft_servo_python, the EPROM fallback driver
+serial = ["pyserial"]          # only for ft_servo_python_only, the unused second driver
 
 [project.scripts]
 cartesian-hand = "cartesian_hand.__main__:main"
