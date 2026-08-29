@@ -448,23 +448,31 @@ drivers must stay in agreement with nothing enforcing it.
 
 ## Known issues
 
-**`max_mm = 60` is unverified.** Hardware confirmed the hands run multi-turn, so
-the old worry that 60mm exceeds a single 4096-count revolution is answered: it
-does, and that is fine. What is still open is whether 60mm is the real travel.
-The v2 CAD says 50mm on the z stage and jaws and 55mm on the fingers, and
-zeroing only ever finds one hard stop per DOF, so nothing has measured the span.
+**`max_mm` is a limit, not a description.** There is one hard stop per DOF, the
+one zeroing seeks. The far end of each rail is open by design: drive past it and
+the carriage leaves the slider and the servo spins free. `max_mm` is the only
+thing that stops that happening, and it has never been measured. The v2 CAD says
+50mm on the z stage and jaws and 55mm on the fingers; the config says 60.
 
-The `travel` task settles this: it drives each DOF to the stop opposite its zero
-and reports the span in counts, which is exact. Converting to millimetres needs
-`counts_per_mm`, the very value in doubt, so measure one DOF with calipers and
-set `counts_per_mm = span_counts / measured_mm`. It has not been run on hardware
-yet, and it drives every DOF into stops that zeroing never touches.
+It cannot be measured by driving. A `travel` task tried — seek the far stop,
+report the span — and the premise is false, because there is no far stop to
+find. Run on `hand_2` it took six of seven carriages off their rails. Deleted;
+the one measurement it produced before things came apart is that DOF 0 stalled
+2428 counts from its zero, 29.8mm at the configured `counts_per_mm`, against a
+`max_mm` of 60.
 
-This is no longer only a bookkeeping question. Travel above or below one 4096-
-count revolution decides whether stale zero offsets can be recovered
-arithmetically or the hand has to be re-zeroed after every power cycle — see
-*Saved zero offsets go stale by whole turns* below. 60mm is 1.19 turns, 50mm is
-0.99.
+Measure with calipers and type the number in. `counts_per_mm` is hand-wide, so
+one axis calibrates all seven; `max_mm` is per-DOF and each rail needs its own.
+
+Everything that commands `max_mm` directly is loaded against this: `demo`
+(`hand.config.upper`, all seven DOFs), the quickstart in `__init__.py`, a
+normalized action of `+1.0` through `denormalize`, and `caps_contact_based`'s
+lift to `cfg[Z].max_mm`.
+
+Travel above or below one 4096-count revolution also decides whether stale zero
+offsets can be recovered arithmetically or the hand must be re-zeroed after
+every power cycle — see *Saved zero offsets go stale by whole turns* below. 60mm
+is 1.19 turns, 50mm is 0.99, and DOF 0's 29.8mm would be 0.59.
 
 **Contact detection never detected contact.** `wait_for_stall` took its
 threshold as a distance per poll, defaulting to 0.5mm over a 0.05s poll. That is
