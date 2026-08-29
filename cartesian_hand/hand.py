@@ -343,16 +343,36 @@ class CartesianHand:
             self.enable()
 
         moved = [d for d, v in enumerate(positions_mm) if v is not None]
+        # Each gain is scalar-or-per-DOF, matching Motion. A scalar broadcasts
+        # to every moved DOF; a sequence of length n_dof lets one axis differ.
+        # An earlier version of this code only took a scalar, and a vector
+        # silently broke set_pos. Tasks that pass m.torque get the per-DOF
+        # value Motion stores.
+        def expand(value):
+            if value is None:
+                return None
+            arr = np.asarray(value)
+            if arr.ndim == 0:
+                return int(arr)
+            if arr.shape != (self.n_dof,):
+                raise ValueError(
+                    f"per-DOF gain has {arr.shape[0]} values, expected a "
+                    f"scalar or {self.n_dof}")
+            return arr.astype(int)
+        speed_v  = expand(speed)
+        acc_v    = expand(acc)
+        torque_v = expand(torque)
+
         with self.lock:
             for d in moved:
                 cfg = self.config[d]
                 self.target[d] = min(cfg.max_mm, max(cfg.min_mm, float(positions_mm[d])))
-                if speed is not None:
-                    self._speed[d] = int(speed)
-                if acc is not None:
-                    self._acc[d] = int(acc)
-                if torque is not None:
-                    self._torque[d] = int(torque)
+                if speed_v is not None:
+                    self._speed[d] = int(speed_v) if np.isscalar(speed_v) else int(speed_v[d])
+                if acc_v is not None:
+                    self._acc[d] = int(acc_v) if np.isscalar(acc_v) else int(acc_v[d])
+                if torque_v is not None:
+                    self._torque[d] = int(torque_v) if np.isscalar(torque_v) else int(torque_v[d])
 
         if not wait:
             return True

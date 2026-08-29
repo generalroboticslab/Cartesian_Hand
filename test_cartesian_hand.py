@@ -528,6 +528,30 @@ def test_enable_holds_position_instead_of_commanding_zero():
             f"hand moved on enable: {hand.positions} vs {parked}"
 
 
+def test_set_pos_accepts_per_dof_gains():
+    """A per-DOF gain vector through set_pos lands on each DOF individually.
+
+    An earlier revision only accepted scalars, so passing m.torque (a list,
+    since Motion was vectorized) silently TypeError'd. Tasks rely on this.
+    """
+    with _mock_hand() as hand:
+        per_dof = [50, 50, 50, 300, 50, 50, 50]
+        hand.set_pos([20.0] * hand.n_dof, torque=per_dof, wait=False)
+        got = [hand.gains(d)["torque"] for d in range(hand.n_dof)]
+        assert got == per_dof, f"per-DOF torque lost: {got}"
+
+        hand.set_pos([25.0] * hand.n_dof, torque=200, wait=False)
+        got = [hand.gains(d)["torque"] for d in range(hand.n_dof)]
+        assert all(t == 200 for t in got), f"scalar broadcast lost: {got}"
+
+        # Wrong-length sequence raises — same rule Motion enforces.
+        try:
+            hand.set_pos([25.0] * hand.n_dof, torque=[100, 200], wait=False)
+            raise AssertionError("a 2-value gain vector should not be accepted")
+        except ValueError:
+            pass
+
+
 def test_per_dof_gains_ride_in_one_write():
     """Differing gains must not fall back to one packet per servo."""
     with _mock_hand() as hand:
