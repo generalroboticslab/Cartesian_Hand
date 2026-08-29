@@ -69,33 +69,33 @@ def caps(hand, bottle_diameter: float = 60.0, cap_diameter: float = 30.0,
 
     if do_open:
         print("caps: opening")
-        hand.set_dofs({BASE_JAW: approach_mm, AUX_JAW: approach_mm}, **gains)
-        hand.set_dofs({Z: cap_z}, **gains)
+        hand.set_pos({BASE_JAW: approach_mm, AUX_JAW: approach_mm}, **gains)
+        hand.set_pos({Z: cap_z}, **gains)
         time.sleep(3.0)
 
-        hand.set_dofs({BASE_JAW: bottle_grip,
+        hand.set_pos({BASE_JAW: bottle_grip,
                        BASE_LEFT: x_max / 2, BASE_RIGHT: x_max / 2}, **gains)
 
         for i in range(strokes):
             print(f"  stroke {i + 1}/{strokes}")
-            hand.set_dofs({AUX_LEFT: 0.0, AUX_RIGHT: x_max}, **gains)
-            hand.set_dofs({AUX_JAW: cap_grip}, **gains)
-            hand.set_dofs({AUX_LEFT: x_max, AUX_RIGHT: 0.0}, **gains)
-            hand.set_dofs({AUX_JAW: cap_grip + CAP_RELEASE}, **gains)
+            hand.set_pos({AUX_LEFT: 0.0, AUX_RIGHT: x_max}, **gains)
+            hand.set_pos({AUX_JAW: cap_grip}, **gains)
+            hand.set_pos({AUX_LEFT: x_max, AUX_RIGHT: 0.0}, **gains)
+            hand.set_pos({AUX_JAW: cap_grip + CAP_RELEASE}, **gains)
 
         print("  extracting")
-        hand.set_dofs({AUX_LEFT: x_max / 2, AUX_RIGHT: x_max / 2}, **gains)
-        hand.set_dofs({AUX_JAW: cap_grip}, **gains)
-        hand.set_dofs({Z: extract_z}, **gains)
-        hand.set_dofs({BASE_LEFT: x_max, BASE_RIGHT: x_max,
+        hand.set_pos({AUX_LEFT: x_max / 2, AUX_RIGHT: x_max / 2}, **gains)
+        hand.set_pos({AUX_JAW: cap_grip}, **gains)
+        hand.set_pos({Z: extract_z}, **gains)
+        hand.set_pos({BASE_LEFT: x_max, BASE_RIGHT: x_max,
                        AUX_LEFT: 0.0, AUX_RIGHT: 0.0}, **gains)
         print("cap removed, bottle presented.")
 
     if do_close:
         print("caps: closing")
-        hand.set_dofs({BASE_LEFT: x_max / 2, BASE_RIGHT: x_max / 2,
+        hand.set_pos({BASE_LEFT: x_max / 2, BASE_RIGHT: x_max / 2,
                        AUX_LEFT: x_max / 2, AUX_RIGHT: x_max / 2}, **gains)
-        hand.set_dofs({Z: cap_z}, **gains)
+        hand.set_pos({Z: cap_z}, **gains)
 
         for i in range(strokes):
             print(f"  stroke {i + 1}/{strokes}")
@@ -103,15 +103,15 @@ def caps(hand, bottle_diameter: float = 60.0, cap_diameter: float = 30.0,
             # fingers turn it. Only the fingers are waited on: the z axis is
             # meant to stall against the cap, so it never reaches its target.
             hand.set_gains([Z], torque=50)
-            hand.set_dofs({Z: 0.0, AUX_LEFT: x_max, AUX_RIGHT: 0.0},
+            hand.set_pos({Z: 0.0, AUX_LEFT: x_max, AUX_RIGHT: 0.0},
                           wait_dofs=[AUX_LEFT, AUX_RIGHT], speed=speed, acc=acc)
-            hand.set_dofs({AUX_JAW: cap_grip + CAP_RELEASE}, **gains)
-            hand.set_dofs({Z: cap_z}, **gains)
-            hand.set_dofs({AUX_LEFT: 0.0, AUX_RIGHT: x_max}, **gains)
-            hand.set_dofs({AUX_JAW: cap_grip}, **gains)
+            hand.set_pos({AUX_JAW: cap_grip + CAP_RELEASE}, **gains)
+            hand.set_pos({Z: cap_z}, **gains)
+            hand.set_pos({AUX_LEFT: 0.0, AUX_RIGHT: x_max}, **gains)
+            hand.set_pos({AUX_JAW: cap_grip}, **gains)
 
-        hand.set_dofs({Z: cap_z}, **gains)
-        hand.set_dofs({BASE_JAW: approach_mm, AUX_JAW: approach_mm}, **gains)
+        hand.set_pos({Z: cap_z}, **gains)
+        hand.set_pos({BASE_JAW: approach_mm, AUX_JAW: approach_mm}, **gains)
         print("cap closed, gripper cleared.")
 
 

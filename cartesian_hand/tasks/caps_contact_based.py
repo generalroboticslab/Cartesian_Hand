@@ -83,20 +83,20 @@ def caps_open(hand, cap_offset: float = 20.0, num_revs: float = 3.0,
         # Release the cap, reset the fingers, re-grip, then twist. The base jaw
         # keeps its squeeze throughout: gains are per DOF, so moving the aux
         # side does not disturb it.
-        hand.set_dofs({AUX_JAW: cap_radius + 1.0}, **gains)
-        hand.set_dofs({AUX_LEFT: x_max, AUX_RIGHT: 0.0}, speed=speed, acc=acc)
-        hand.set_dofs({AUX_JAW: cap_radius}, speed=speed, acc=acc)
+        hand.set_pos({AUX_JAW: cap_radius + 1.0}, **gains)
+        hand.set_pos({AUX_LEFT: x_max, AUX_RIGHT: 0.0}, speed=speed, acc=acc)
+        hand.set_pos({AUX_JAW: cap_radius}, speed=speed, acc=acc)
         squeeze(hand, [AUX_JAW], squeeze_torque)
-        hand.set_dofs({AUX_LEFT: 0.0, AUX_RIGHT: x_max}, speed=speed, acc=acc)
+        hand.set_pos({AUX_LEFT: 0.0, AUX_RIGHT: x_max}, speed=speed, acc=acc)
 
     # Lift the freed cap clear, then open the base jaw to present the bottle.
     print("extracting...")
-    hand.set_dofs({AUX_JAW: cap_radius + 1.0}, **gains)
-    hand.set_dofs({AUX_LEFT: x_max / 2, AUX_RIGHT: x_max / 2}, speed=speed, acc=acc)
+    hand.set_pos({AUX_JAW: cap_radius + 1.0}, **gains)
+    hand.set_pos({AUX_LEFT: x_max / 2, AUX_RIGHT: x_max / 2}, speed=speed, acc=acc)
     approach(hand, [AUX_JAW], torque=approach_torque, speed=approach_speed)
     squeeze(hand, [AUX_JAW], squeeze_torque)
-    hand.set_dofs({Z: cfg[Z].max_mm}, speed=speed, acc=acc)
-    hand.set_dofs({BASE_LEFT: x_max, BASE_RIGHT: x_max,
+    hand.set_pos({Z: cfg[Z].max_mm}, speed=speed, acc=acc)
+    hand.set_pos({BASE_LEFT: x_max, BASE_RIGHT: x_max,
                    AUX_LEFT: 0.0, AUX_RIGHT: 0.0}, **gains)
     print("cap removed.")
 

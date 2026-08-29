@@ -388,8 +388,8 @@ class Config:
 def run(hand, cfg: Config):
     try:
         for _ in range(cfg.reps):
-            hand.set_dofs({Z: 40.0})
-            hand.set_dofs({Z: 10.0})
+            hand.set_pos({Z: 40.0})
+            hand.set_pos({Z: 10.0})
     finally:
         hand.release()
 ```
@@ -397,7 +397,7 @@ def run(hand, cfg: Config):
 That gives you `python -m cartesian_hand wave --reps 5 --mock`, with `--reps`
 documented from the field docstring.
 
-Address DOFs by role, not index. `hand.set_dofs({AUX_JAW: 12.0})` says what it
+Address DOFs by role, not index. `hand.set_pos({AUX_JAW: 12.0})` says what it
 does; `set_pos([None, None, None, None, 12.0, None, None])` hides the meaning in
 the position of the one entry that is not `None`. Role names are in
 [`cartesian_hand/tasks/roles.py`](cartesian_hand/tasks/roles.py).
@@ -482,7 +482,7 @@ this bus.
 **`enable()` used to command every joint to 0mm.** The loop writes the whole
 target vector each step and `target` starts as zeros, so starting the loop drove
 the hand into its hard stops before any target was set. Commanding a subset is
-what exposed it: `set_dofs({Z: 35.0})` leaves the other six "unchanged", and
+what exposed it: `set_pos({Z: 35.0})` leaves the other six "unchanged", and
 unchanged meant zero. Hit during this bring-up — six joints travelled from 29mm
 to their 0mm stops at torque 50. Fixed by seeding the target from the measured
 position in `enable()`.

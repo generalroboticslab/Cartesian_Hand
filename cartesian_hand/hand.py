@@ -184,9 +184,8 @@ class CartesianHand:
             # the whole target vector every step, and target starts as zeros, so
             # without this the first step commands every joint to 0mm — driving
             # the entire hand into the hard stops the instant the loop starts.
-            # Commanding a subset (set_dofs on one DOF, hold() on the jaws) is
-            # what exposes it: the DOFs left alone are not left where they are,
-            # they are left at zero.
+            # Commanding a subset is what exposes it: the DOFs left out of the
+            # call are not left where they are, they are left at zero.
             self._seed_target_from_hardware()
             self.servo.enable_torques(self.config.servo_ids, True)
             self.running = True
@@ -334,13 +333,27 @@ class CartesianHand:
                 tolerance: float = 1.0, timeout: float = 5.0) -> bool:
         """Command target positions in mm. Returns True if the wait converged.
 
-        Pass None for a DOF to leave its target unchanged. speed/acc/torque
-        apply only to the DOFs actually commanded in this call, so a gain set
-        for a squeezing jaw survives a later move of a different DOF.
+        Takes either a full vector or a `{dof_id: mm}` mapping. Tasks move two
+        or three DOFs out of seven, and a positional list of mostly Nones hides
+        the meaning in the index of the one entry that is not:
+
+            hand.set_pos({AUX_JAW: 12.0, Z: 20.0})
+            hand.set_pos([None, None, None, 20.0, 12.0, None, None])
+
+        A None in the vector form leaves that DOF's target unchanged, as does
+        omitting it from the mapping. speed/acc/torque apply only to the DOFs
+        actually commanded in this call, so a gain set for a squeezing jaw
+        survives a later move of a different DOF.
         """
         self.require_zeroed()
         if not self.running:
             self.enable()
+
+        if isinstance(positions_mm, dict):
+            vector = [None] * self.n_dof
+            for dof_id, mm in positions_mm.items():
+                vector[dof_id] = mm
+            positions_mm = vector
 
         moved = [d for d, v in enumerate(positions_mm) if v is not None]
         # Each gain is scalar-or-per-DOF, matching Motion. A scalar broadcasts
@@ -393,32 +406,9 @@ class CartesianHand:
         print(f"[{self.name}] set_pos timed out on DOFs {check}")
         return False
 
-    def set_dofs(self, updates: dict, **kwargs) -> bool:
-        """Command named DOFs by id: `hand.set_dofs({AUX_JAW: 12.0, Z: 20.0})`.
-
-        Tasks move two or three DOFs at a time out of seven, and spelling that
-        as a positional list is mostly Nones with the meaning hidden in the
-        index of the one entry that is not.
-        """
-        positions = [None] * self.n_dof
-        for dof_id, mm in updates.items():
-            positions[dof_id] = mm
-        return self.set_pos(positions, **kwargs)
-
     def move(self, action, **kwargs) -> bool:
         """Command a normalized [-1, 1] action vector. The policy-facing move."""
         return self.set_pos(self.config.denormalize(action), **kwargs)
-
-    def hold(self, dof_ids, torque: int, position_mm: float = 0.0):
-        """Drive DOFs toward a position with reduced torque so they stall on
-        contact and keep pressing. This is how the hand grips."""
-        self.require_zeroed()
-        if not self.running:
-            self.enable()
-        with self.lock:
-            for d in dof_ids:
-                self._torque[d] = int(torque)
-                self.target[d] = float(position_mm)
 
     # ── Monitoring ────────────────────────────────────────────────────────────
 

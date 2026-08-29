@@ -170,13 +170,21 @@ def test_gains_are_per_dof():
         assert hand.gains(1)["torque"] == 42
 
 
-def test_set_dofs_matches_set_pos():
+def test_set_pos_accepts_a_mapping():
+    """The mapping form must command exactly the DOFs it names."""
     with _mock_hand(load_calibration=False) as hand:
         hand.is_zeroed = True
-        hand.set_dofs({3: 20.0, 5: 15.0}, wait=False)
+        hand.set_pos({3: 20.0, 5: 15.0}, wait=False)
         t = hand.targets
         assert t[3] == 20.0 and t[5] == 15.0
-        assert t[0] == 0.0, "set_dofs touched an uncommanded DOF"
+        assert t[0] == 0.0, "mapping form touched an uncommanded DOF"
+
+        # Mapping and vector forms are the same call.
+        hand.set_pos([None, None, None, 40.0, None, 35.0, None], wait=False)
+        v = hand.targets
+        hand.set_pos({3: 20.0, 5: 15.0}, wait=False)
+        hand.set_pos({3: 40.0, 5: 35.0}, wait=False)
+        assert np.allclose(hand.targets, v), "mapping and vector forms disagree"
 
 
 def test_position_clamping():

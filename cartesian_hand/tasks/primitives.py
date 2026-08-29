@@ -60,16 +60,15 @@ def approach(hand, dof_ids, torque: int = 150, speed: int = 50,
     Returns {dof_id: contact_mm}. For a jaw closing on an object, the contact
     position is the object's radius.
     """
-    hand.require_zeroed()
-    hand.enable()
-    hand.set_gains(dof_ids, speed=speed, torque=torque)
-    hand.hold(dof_ids, torque=torque, position_mm=target_mm)
+    hand.set_pos({d: target_mm for d in dof_ids},
+                 speed=speed, torque=torque, wait=False)
     return wait_for_stall(hand, dof_ids, label="contact", **kwargs)
 
 
 def squeeze(hand, dof_ids, torque: int, position_mm: float = 0.0):
-    """Hold DOFs against an object at a given torque."""
-    hand.hold(dof_ids, torque=torque, position_mm=position_mm)
+    """Drive DOFs toward a position at reduced torque so they stall on contact
+    and keep pressing. This is how the hand grips."""
+    hand.set_pos({d: position_mm for d in dof_ids}, torque=torque, wait=False)
 
 
 def squeeze_until_stall(hand, dof_ids, torque: int, **kwargs) -> dict:
