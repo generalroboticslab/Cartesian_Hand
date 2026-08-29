@@ -90,7 +90,7 @@ def squeeze_until_stall(hand, dof_ids, torque: int, **kwargs) -> dict:
 
 # ── Pre-calibration variant ───────────────────────────────────────────────────
 
-def wait_for_stall_counts(hand, dof_ids, stall_threshold: int = 5,
+def wait_for_stall_counts(hand, dof_ids, stall_speed: float = 25.0,
                           confirm_count: int = 2, timeout: float = 30.0,
                           poll: float = 0.1, verbose: bool = True) -> dict:
     """Stall detection in raw servo counts, for use before zeroing.
@@ -99,6 +99,14 @@ def wait_for_stall_counts(hand, dof_ids, stall_threshold: int = 5,
     servo never answered. None must stay None: reporting a timed-out DOF at its
     last position would record a zero offset in the middle of travel, and every
     subsequent mm command on that axis would be wrong.
+
+    stall_speed is counts/sec, for the same reason wait_for_stall's is mm/sec: a
+    per-poll distance silently depends on the poll interval. This one used to
+    ask for 5 counts per 0.1s poll, which is 50 counts/sec -- exactly the creep
+    speed zeroing commands, so a DOF travelling at precisely the commanded rate
+    sat on the boundary and either reading could win. It happened to work. The
+    default is now half the creep speed, so travelling and stalled are an
+    unambiguous factor of two apart in each direction.
     """
     dof_ids = list(dof_ids)
     read = lambda d: hand.servo.read_position(hand.config[d].servo_id)
@@ -116,7 +124,12 @@ def wait_for_stall_counts(hand, dof_ids, stall_threshold: int = 5,
                 stalled[d] = None
             break
 
+        t0 = time.time()
         time.sleep(poll)
+        # Measured, not assumed: one read per DOF per round means the real
+        # interval grows with len(dof_ids), and a phase of four fingers polls
+        # noticeably slower than a phase of one z stage.
+        elapsed = max(time.time() - t0, 1e-6)
         for d in dof_ids:
             if d in stalled:
                 continue
@@ -126,11 +139,11 @@ def wait_for_stall_counts(hand, dof_ids, stall_threshold: int = 5,
                 consecutive[d] = 0
                 prev[d] = actual
                 continue
-            movement = abs(actual - prev[d])
+            speed = abs(actual - prev[d]) / elapsed
             prev[d] = actual
             if verbose:
-                print(f"  DOF {d} | counts: {actual} | movement: {movement}")
-            if movement < stall_threshold:
+                print(f"  DOF {d} | counts: {actual} | speed: {speed:.0f}/s")
+            if speed < stall_speed:
                 consecutive[d] += 1
                 if consecutive[d] >= confirm_count:
                     stalled[d] = actual

@@ -38,7 +38,7 @@ PHASES = [("x fingers", [1, 2, 5, 6]),
 OVERTRAVEL_COUNTS = 10000     # far enough past the stop that the servo keeps pressing
 
 
-def zero_all(hand, stall_threshold: int = 5, confirm_count: int = 2,
+def zero_all(hand, stall_speed: float = 25.0, confirm_count: int = 2,
              zero_torque=None, creep_speed: int = 50,
              transit_speed: int = 100, transit_acc: int = 20,
              transit_torque: int = 400, transit_tolerance: int = 80,
@@ -100,7 +100,7 @@ def zero_all(hand, stall_threshold: int = 5, confirm_count: int = 2,
         torque_v = [per_dof_torque[d] for d in dof_ids]
         hand.servo.set_positions(sids, targets, speed_v, acc_v, torque_v)
 
-        stops = wait_for_stall_counts(hand, dof_ids, stall_threshold=stall_threshold,
+        stops = wait_for_stall_counts(hand, dof_ids, stall_speed=stall_speed,
                                       confirm_count=confirm_count, timeout=stall_timeout)
         missing = [d for d, c in stops.items() if c is None]
         if missing:
@@ -126,7 +126,7 @@ def zero_all(hand, stall_threshold: int = 5, confirm_count: int = 2,
     return True
 
 
-def zero_single(hand, dof_id: int, stall_threshold: int = 5, confirm_count: int = 5,
+def zero_single(hand, dof_id: int, stall_speed: float = 25.0, confirm_count: int = 5,
                 zero_torque: int = 50, creep_speed: int = 50,
                 stall_timeout: float = 30.0):
     """Zero one DOF. Debug aid: does not mark the hand as zeroed or save."""
@@ -141,7 +141,7 @@ def zero_single(hand, dof_id: int, stall_threshold: int = 5, confirm_count: int 
     print(f"[{hand.name}] zeroing DOF {dof_id} from {here}")
     hand.servo.set_position(sid, here - cfg[dof_id].orientation * OVERTRAVEL_COUNTS,
                             creep_speed, 20, zero_torque)
-    stops = wait_for_stall_counts(hand, [dof_id], stall_threshold=stall_threshold,
+    stops = wait_for_stall_counts(hand, [dof_id], stall_speed=stall_speed,
                                   confirm_count=confirm_count, timeout=stall_timeout)
     counts = stops[dof_id]
     if counts is None:
