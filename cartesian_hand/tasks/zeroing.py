@@ -8,7 +8,7 @@ the z stage drops, which keeps the mechanism from binding on itself.
 from dataclasses import dataclass
 from typing import Optional
 
-from ..hands import ZEROING_TORQUE
+from ..hand import ZEROING_TORQUE
 from .primitives import wait_for_stall_counts, wait_until_counts
 
 DESCRIPTION = "Zero all DOFs against their hard stops"
@@ -21,12 +21,16 @@ class Config:
     zero_torque: int = 0
     """Override creep torque as a single scalar broadcast to every DOF.
 
-    Set to 0 to use hands.ZEROING_TORQUE per DOF (low for fingers, higher
+    Set to 0 to use hand.ZEROING_TORQUE per DOF (low for fingers, higher
     for z). The legacy flat-50 is available as `--zero-torque 50` for
     anyone who needs the old behaviour, but is wrong for fingers and z.
     """
     creep_speed: int = 50
     """Speed used while seeking the stop."""
+    stall_speed: float = 5.0
+    """counts/sec, averaged over a whole confirm window, below which a DOF is
+    against its stop. Raise it if a hand is stiff enough that a real stall still
+    dithers past 5; lower it if a slow creep is being called a stop."""
     save: bool = True
     """Write the resulting offsets to the calibration file."""
 
@@ -38,7 +42,7 @@ PHASES = [("x fingers", [1, 2, 5, 6]),
 OVERTRAVEL_COUNTS = 10000     # far enough past the stop that the servo keeps pressing
 
 
-def zero_all(hand, stall_speed: float = 25.0, confirm_count: int = 2,
+def zero_all(hand, stall_speed: float = 5.0, confirm_s: float = 1.0,
              zero_torque=None, creep_speed: int = 50,
              transit_speed: int = 100, transit_acc: int = 20,
              transit_torque: int = 400, transit_tolerance: int = 80,
@@ -52,7 +56,7 @@ def zero_all(hand, stall_speed: float = 25.0, confirm_count: int = 2,
     cfg = hand.config
 
     # Per-DOF creep torque. zero_torque<=0 means use the per-DOF default in
-    # hands.ZEROING_TORQUE — flat-50 binds the fingers and stalls z in mid-air,
+    # hand.ZEROING_TORQUE — flat-50 binds the fingers and stalls z in mid-air,
     # flat-150 stalls the fingers further. A positive arg broadcasts a single
     # value to every DOF, matching legacy behaviour for callers that still pass one.
     if not zero_torque:                       # None or 0 → per-DOF default
@@ -101,7 +105,7 @@ def zero_all(hand, stall_speed: float = 25.0, confirm_count: int = 2,
         hand.servo.set_positions(sids, targets, speed_v, acc_v, torque_v)
 
         stops = wait_for_stall_counts(hand, dof_ids, stall_speed=stall_speed,
-                                      confirm_count=confirm_count, timeout=stall_timeout)
+                                      confirm_s=confirm_s, timeout=stall_timeout)
         missing = [d for d, c in stops.items() if c is None]
         if missing:
             # Recording a zero for a DOF that never stalled would put the origin
@@ -126,7 +130,7 @@ def zero_all(hand, stall_speed: float = 25.0, confirm_count: int = 2,
     return True
 
 
-def zero_single(hand, dof_id: int, stall_speed: float = 25.0, confirm_count: int = 5,
+def zero_single(hand, dof_id: int, stall_speed: float = 5.0, confirm_s: float = 1.0,
                 zero_torque: int = 50, creep_speed: int = 50,
                 stall_timeout: float = 30.0):
     """Zero one DOF. Debug aid: does not mark the hand as zeroed or save."""
@@ -142,7 +146,7 @@ def zero_single(hand, dof_id: int, stall_speed: float = 25.0, confirm_count: int
     hand.servo.set_position(sid, here - cfg[dof_id].orientation * OVERTRAVEL_COUNTS,
                             creep_speed, 20, zero_torque)
     stops = wait_for_stall_counts(hand, [dof_id], stall_speed=stall_speed,
-                                  confirm_count=confirm_count, timeout=stall_timeout)
+                                  confirm_s=confirm_s, timeout=stall_timeout)
     counts = stops[dof_id]
     if counts is None:
         raise RuntimeError(f"DOF {dof_id} never stalled")
@@ -155,9 +159,9 @@ def run(hand, cfg: Config):
     try:
         if cfg.dof is not None:
             zero_single(hand, cfg.dof, zero_torque=cfg.zero_torque,
-                        creep_speed=cfg.creep_speed)
+                        creep_speed=cfg.creep_speed, stall_speed=cfg.stall_speed)
         else:
-            zero_all(hand, zero_torque=cfg.zero_torque,
-                     creep_speed=cfg.creep_speed, save=cfg.save)
+            zero_all(hand, zero_torque=cfg.zero_torque, creep_speed=cfg.creep_speed,
+                     stall_speed=cfg.stall_speed, save=cfg.save)
     finally:
         hand.release()

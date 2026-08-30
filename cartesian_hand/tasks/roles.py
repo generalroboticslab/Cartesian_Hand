@@ -3,7 +3,7 @@
 Tasks address DOFs by mechanical role. `hand.set_pos({AUX_JAW: 12.0})` says
 what it does; `set_pos([None, None, None, None, 12.0, None, None])` does not.
 
-These match hands.LAYOUT. A hand with a different layout needs its own role map.
+These match hand.LAYOUT. A hand with a different layout needs its own role map.
 """
 
 BASE_JAW = 0        # base parallel actuation, y

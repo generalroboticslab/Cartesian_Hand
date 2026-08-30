@@ -90,8 +90,8 @@ def squeeze_until_stall(hand, dof_ids, torque: int, **kwargs) -> dict:
 
 # ── Pre-calibration variant ───────────────────────────────────────────────────
 
-def wait_for_stall_counts(hand, dof_ids, stall_speed: float = 25.0,
-                          confirm_count: int = 2, timeout: float = 30.0,
+def wait_for_stall_counts(hand, dof_ids, stall_speed: float = 5.0,
+                          confirm_s: float = 1.0, timeout: float = 30.0,
                           poll: float = 0.1, verbose: bool = True) -> dict:
     """Stall detection in raw servo counts, for use before zeroing.
 
@@ -100,19 +100,31 @@ def wait_for_stall_counts(hand, dof_ids, stall_speed: float = 25.0,
     last position would record a zero offset in the middle of travel, and every
     subsequent mm command on that axis would be wrong.
 
-    stall_speed is counts/sec, for the same reason wait_for_stall's is mm/sec: a
-    per-poll distance silently depends on the poll interval. This one used to
-    ask for 5 counts per 0.1s poll, which is 50 counts/sec -- exactly the creep
-    speed zeroing commands, so a DOF travelling at precisely the commanded rate
-    sat on the boundary and either reading could win. It happened to work. The
-    default is now half the creep speed, so travelling and stalled are an
-    unambiguous factor of two apart in each direction.
+    Speed is net displacement over a whole confirm_s window, not a run of
+    individually slow polls. The encoder quantizes to whole counts, so a poll of
+    length p can only resolve speed in steps of 1/p: at the 0.1s poll used here,
+    the smallest non-zero reading is 10 counts/sec. The old threshold of 25
+    counts/sec was two and a half of those steps wide, which left a DOF creeping
+    at the commanded 50 counts/sec needing to clear 3 counts per poll against a
+    5-count budget. hand_2 cleared it. hand_1 has more friction and therefore
+    creeps slower for the same command, so pairs of polls landed on the same
+    count and it recorded hard stops in the middle of a rail.
+
+    Widening the window is what buys the sensitivity: over 1.0s a travelling DOF
+    moves tens of counts while one against its stop dithers by one or two, so
+    the threshold can drop to 5 counts/sec and sit an order of magnitude clear
+    of both. Cost is up to 2*confirm_s of latency after the real stop, since the
+    window is tumbling rather than sliding.
+
+    A dropped read contributes nothing and does not reset the window: the
+    displacement across it is still valid, measured over a longer interval.
     """
     dof_ids = list(dof_ids)
     read = lambda d: hand.servo.read_position(hand.config[d].servo_id)
 
-    prev = {d: read(d) for d in dof_ids}
-    consecutive = {d: 0 for d in dof_ids}
+    # (counts, time) each window is measured from. Re-anchored on every window
+    # that shows real travel.
+    anchor = {d: (read(d), time.time()) for d in dof_ids}
     stalled = {}
     deadline = time.time() + timeout
 
@@ -124,32 +136,29 @@ def wait_for_stall_counts(hand, dof_ids, stall_speed: float = 25.0,
                 stalled[d] = None
             break
 
-        t0 = time.time()
         time.sleep(poll)
-        # Measured, not assumed: one read per DOF per round means the real
-        # interval grows with len(dof_ids), and a phase of four fingers polls
-        # noticeably slower than a phase of one z stage.
-        elapsed = max(time.time() - t0, 1e-6)
+        now = time.time()
         for d in dof_ids:
             if d in stalled:
                 continue
             actual = read(d)
-            if actual is None or prev[d] is None:
-                # Dropped frame: no movement estimate this round, keep waiting.
-                consecutive[d] = 0
-                prev[d] = actual
+            if actual is None:
                 continue
-            speed = abs(actual - prev[d]) / elapsed
-            prev[d] = actual
+            counts0, started = anchor[d]
+            if counts0 is None:                 # first good read opens the window
+                anchor[d] = (actual, now)
+                continue
+            window = now - started
+            if window < confirm_s:
+                continue
+            speed = abs(actual - counts0) / window
             if verbose:
-                print(f"  DOF {d} | counts: {actual} | speed: {speed:.0f}/s")
+                print(f"  DOF {d} | counts: {actual} | speed: {speed:.1f}/s")
             if speed < stall_speed:
-                consecutive[d] += 1
-                if consecutive[d] >= confirm_count:
-                    stalled[d] = actual
-                    print(f"  DOF {d} hard stop at {actual}")
+                stalled[d] = actual
+                print(f"  DOF {d} hard stop at {actual}")
             else:
-                consecutive[d] = 0
+                anchor[d] = (actual, now)
 
     return {d: stalled.get(d) for d in dof_ids}
 

@@ -7,14 +7,15 @@ the normalized action contract, per-DOF gain isolation, slew limiting, and
 rollout round-tripping. It does not and cannot verify servo behaviour.
 """
 
+import itertools
 import os
 import time
 import tempfile
 
 import numpy as np
 
-from cartesian_hand.hand import CartesianHand, connect
-from cartesian_hand.hands import Dof, Geometry, HandConfig, Motion, get_hand
+from cartesian_hand.hand import (CartesianHand, Dof, Geometry, HandConfig,
+                                 Motion, connect, get_hand)
 from cartesian_hand.policy import (
     ContractMismatch,
     FunctionPolicy,
@@ -325,8 +326,47 @@ def test_zeroing_aborts_when_a_dof_never_stalls():
         sid = hand.config[0].servo_id
         hand.servo.enable_torque(sid, True)
         hand.servo.set_position(sid, hand.servo.read_position(sid) - 10000, 50, 20, 50)
-        stops = primitives.wait_for_stall_counts(hand, [0], timeout=0.5, verbose=False)
+        stops = primitives.wait_for_stall_counts(hand, [0], confirm_s=0.1,
+                                                 timeout=0.5, verbose=False)
         assert stops[0] is None, "timeout reported a moving DOF as a hard stop"
+
+
+def test_a_slow_creep_is_not_a_hard_stop():
+    """The fault that made zeroing unusable on hand_1.
+
+    The encoder quantizes to whole counts, so a poll of length p resolves speed
+    only in steps of 1/p -- 20 counts/s at the 0.05s poll below. A threshold set
+    within a step or two of the creep rate therefore reads a travelling DOF as
+    stopped whenever two polls happen to land on the same count, and a stiffer
+    hand creeps slower for the same command, which is what pushed hand_1 over
+    the line and had it recording hard stops mid-rail.
+    """
+    from cartesian_hand.tasks import primitives
+
+    with _mock_hand(load_calibration=False) as hand:
+        # Steady 22 counts/s, quantized. int() supplies the same +-1 count of
+        # poll-to-poll jitter the real encoder does: most polls advance by one
+        # count, which the old per-poll test scored as 20 counts/s and called a
+        # stall on the second one.
+        t0 = time.time()
+        hand.servo.read_position = lambda sid: int(22.0 * (time.time() - t0))
+        stops = primitives.wait_for_stall_counts(hand, [0], confirm_s=0.3,
+                                                 timeout=1.2, poll=0.05, verbose=False)
+        assert stops[0] is None, "a DOF creeping at 22 counts/s was called a hard stop"
+
+
+def test_a_dithering_stop_is_still_a_stop():
+    """Other side of the same threshold: a servo pressed into its hard stop
+    still dithers a count either way, and that must not read as motion -- a
+    missed stall aborts zeroing outright."""
+    from cartesian_hand.tasks import primitives
+
+    dither = itertools.cycle([4000, 4001, 4000, 3999])
+    with _mock_hand(load_calibration=False) as hand:
+        hand.servo.read_position = lambda sid: next(dither)
+        stops = primitives.wait_for_stall_counts(hand, [0], confirm_s=0.3,
+                                                 timeout=2.0, poll=0.05, verbose=False)
+        assert stops[0] is not None, "a servo against its stop was read as moving"
 
 
 def test_unfingerprinted_replay_is_refused():
@@ -460,6 +500,51 @@ def test_control_loop_drops_torque_on_driver_failure():
         assert not hand.running, "loop kept running after a driver exception"
         assert hand._loop_error is not None
         assert not any(hand.servo._torque_on.values()), "servos left energized"
+
+
+def test_control_loop_stops_when_the_bus_goes_silent():
+    """Unplugging the hardware must stop the loop, not freeze it.
+
+    A bus that has gone away answers nothing, which `_step` used to treat as a
+    dropped frame: keep the last reading and carry on. `actual` then sits frozen
+    at the last good value -- indistinguishable from a hand holding position --
+    while the loop keeps writing goals into a dead port forever.
+    """
+    with _mock_hand(load_calibration=False) as hand:
+        hand.is_zeroed = True
+        hand.set_pos(np.full(hand.n_dof, 10.0), wait=False)
+        time.sleep(0.1)
+
+        frozen = hand.actual.copy()
+        hand.servo.read_positions = lambda sids: [None] * len(sids)
+
+        deadline = time.time() + 3.0
+        while hand.running and time.time() < deadline:
+            time.sleep(0.02)
+
+        assert not hand.running, "loop kept running against a bus that went away"
+        assert hand._loop_error is not None
+        assert not any(hand.servo._torque_on.values()), "servos left energized"
+        assert np.allclose(hand.actual, frozen), \
+            "a silent bus must not invent new positions"
+
+
+def test_a_single_dropped_sweep_is_survivable():
+    """One silent read is interference, not a missing bus. The loop rides it out."""
+    with _mock_hand(load_calibration=False) as hand:
+        hand.is_zeroed = True
+        real = hand.servo.read_positions
+        calls = []
+
+        def drop_one(sids):
+            calls.append(1)
+            return [None] * len(sids) if len(calls) == 1 else real(sids)
+
+        hand.servo.read_positions = drop_one
+        hand._step()                       # the dropped sweep
+        assert hand._silent_steps == 1
+        hand._step()                       # the bus answers again
+        assert hand._silent_steps == 0, "one bad sweep must not stay counted"
 
 
 def test_cli_parses_without_hardware():
@@ -681,6 +766,38 @@ def test_per_dof_gains_ride_in_one_write():
         assert torque[0] == hand.config.gain_vector("torque")[0], \
             f"other DOFs disturbed: {torque}"
         assert len(speed) == hand.n_dof and len(acc) == hand.n_dof
+
+
+def test_gui_refuses_a_bad_id_write():
+    """Each guard in front of the GUI's EPROM write must actually refuse.
+
+    The button writes an ID that survives power cycles, and a servo browned out
+    mid-write answers to no ID at all -- so the branch that says no is the whole
+    safety of the feature, and it is the part a browser test would not reach.
+    """
+    from hardware_bindings.ft_servo.__main__ import rename_refusal
+
+    class Servo:
+        def __init__(self, volt=115, temp=30):
+            self.volt, self.temp = volt, temp
+
+        def get_voltage(self, _):
+            return self.volt
+
+        def get_temperature(self, _):
+            return self.temp
+
+    ids = [7, 8, 9]
+    for why, drv, new in [("renaming to itself", Servo(), 7),
+                          ("colliding with a live ID", Servo(), 8),
+                          ("undervolt", Servo(volt=80), 20),
+                          ("unreadable voltage", Servo(volt=None), 20),
+                          ("overtemp", Servo(temp=70), 20),
+                          ("unreadable temperature", Servo(temp=None), 20)]:
+        assert rename_refusal(drv, ids, 7, new) is not None, f"allowed {why}"
+
+    assert rename_refusal(Servo(), ids, 7, 20) is None, \
+        "a healthy servo and a free ID must be allowed to write"
 
 
 def main():
