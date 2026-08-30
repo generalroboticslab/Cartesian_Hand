@@ -1,13 +1,8 @@
 """Single entry point: `python -m cartesian_hand <command>`.
 
-This is `__main__.py` rather than a `cli.py` plus a stub, because the stub only
-existed to forward to it.
-
-Built with tyro, so the CLI is generated from the same dataclasses the code
-already uses. A task declares a `Config` dataclass and its fields become flags,
-with types and help text taken from the annotations and docstrings. There is no
-parser to write and no place for the flags and the function signature to drift
-apart.
+The CLI is generated from the same dataclasses the code already uses, so a task
+declares a `Config` dataclass and its fields become flags. There is no parser
+to write and no place for the flags and the function signature to drift apart.
 """
 
 import dataclasses
@@ -19,14 +14,13 @@ from typing import Annotated, Optional, Union
 import tyro
 
 from . import tasks
-from .hand import connect
-from .hands import DEFAULT_HAND, get_hand, hand_names
+from .hand import DEFAULT_HAND, connect, get_hand, hand_names
 
-
+# Splice HandOptions fields in without a prefix, so the flag reads `--mock`
+# rather than `--opts.mock`. A class, not a lambda, because `Flat[HandOptions]`
+# also appears in a dataclass field type annotation, where lambdas raise
+# TypeError on subscript.
 class Flat:
-    """Splice a nested dataclass's fields in without a prefix, so the flag reads
-    `--mock` rather than `--opts.mock`."""
-
     def __class_getitem__(cls, inner):
         return Annotated[inner, tyro.conf.arg(name="")]
 
@@ -36,7 +30,7 @@ class HandOptions:
     """Which hand to talk to, and how."""
 
     hand: Optional[str] = None
-    """Name of the hand to drive. Defaults to hands.DEFAULT_HAND."""
+    """Name of the hand to drive. Defaults to hand.DEFAULT_HAND."""
     port: Optional[str] = None
     """Override the hand's serial port for this run."""
     mock: bool = False
@@ -47,7 +41,7 @@ class HandOptions:
 
     def open_bus(self):
         """Raw driver with no controller, for maintenance on an unconfigured hand."""
-        from .driver import open_driver
+        from .servo import open_driver
         port = self.port or get_hand(self.hand).port
         print(f"port: {port}")
         return open_driver(port, mock=self.mock)
@@ -236,41 +230,36 @@ def load_policy(source: str, loop: bool, config):
     return obj(config) if takes_config else obj()
 
 
-# ── Task commands ─────────────────────────────────────────────────────────────
+# ── Tasks ─────────────────────────────────────────────────────────────────────
+#
+# Each task module exposes a Config dataclass and a run(hand, cfg) function.
+# Wrapped as a subcommand by build_subcommand(), which tyro turns into flags.
 
-def _task_command(name: str, module):
-    """Build a subcommand dataclass for a task from its Config."""
-
+def build_subcommand(name: str, module):
+    """Bind a task module into a subcommand dataclass. tyro reads its fields."""
     def execute(self):
         with self.opts.connect() as hand:
             module.run(hand, self.cfg)
-
     return dataclasses.make_dataclass(
-        f"{name.title().replace('_', '')}Cmd",
+        name.title().replace("_", "") + "Cmd",
         [("opts", Flat[HandOptions], field(default_factory=HandOptions)),
-         ("cfg", Flat[module.Config], field(default_factory=module.Config))],
+         ("cfg", module.Config, field(default_factory=module.Config))],
         namespace={"execute": execute, "__doc__": tasks.describe(name)},
     )
 
 
 def build_cli():
     """Union of every subcommand. tyro turns it into the parser."""
-    variants = [
-        _annotate(ListCmd, "list"),
-        _annotate(ContractCmd, "contract"),
-        _annotate(PublishCmd, "publish"),
-        _annotate(PolicyCmd, "policy"),
-        _annotate(ScanCmd, "scan"),
-        _annotate(SetIdCmd, "set-id"),
-    ]
-    variants += [_annotate(_task_command(name, module), name)
+    from typing import Annotated
+    non_tasks = [("list", ListCmd), ("contract", ContractCmd),
+                 ("publish", PublishCmd), ("policy", PolicyCmd),
+                 ("scan", ScanCmd), ("set-id", SetIdCmd)]
+    variants = [Annotated[cls, tyro.conf.subcommand(name=name, description=cls.__doc__ or "")]
+                for name, cls in non_tasks]
+    variants += [Annotated[build_subcommand(name, module),
+                           tyro.conf.subcommand(name=name, description=tasks.describe(name))]
                  for name, module in sorted(tasks.registry().items())]
     return Union[tuple(variants)]
-
-
-def _annotate(cls, name: str):
-    from typing import Annotated
-    return Annotated[cls, tyro.conf.subcommand(name=name, description=cls.__doc__ or "")]
 
 
 def main(argv=None):
@@ -280,7 +269,8 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\ninterrupted.")
         return 130
-    except (RuntimeError, ValueError, KeyError, NotImplementedError) as e:
+    except Exception as e:
+        # tyro parsing errors land here too; its own messages are user-readable.
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0

@@ -20,5 +20,5 @@ cmake.build-type = "Release"
 # scikit-build-core owns the Python package so that `pip install -e .` is
 # actually editable. CMake installs only the compiled extension into it.
 # Having CMake install the .py files too baked a second copy into site-packages
-# that shadowed the repo, so edits to hands.py silently had no effect.
+# that shadowed the repo, so edits to hand.py silently had no effect.
 wheel.packages = ["cartesian_hand"]

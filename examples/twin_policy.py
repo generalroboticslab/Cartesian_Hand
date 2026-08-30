@@ -19,7 +19,7 @@ contract the twin should be built from.
 
 import numpy as np
 
-from cartesian_hand.hands import get_hand
+from cartesian_hand.hand import get_hand
 from cartesian_hand.policy import Obs, Policy, Rollout
 
 
