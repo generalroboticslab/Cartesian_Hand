@@ -25,8 +25,9 @@ class Config:
     for z). The legacy flat-50 is available as `--zero-torque 50` for
     anyone who needs the old behaviour, but is wrong for fingers and z.
     """
-    creep_speed: int = 50
-    """Speed used while seeking the stop."""
+    creep_speed: int = 200
+    """Speed used while seeking the stop. Higher hits the hard stop harder on
+    contact -- come back down if a joint starts sounding loaded."""
     stall_speed: float = 5.0
     """counts/sec, averaged over a whole confirm window, below which a DOF is
     against its stop. Raise it if a hand is stiff enough that a real stall still
@@ -43,8 +44,8 @@ OVERTRAVEL_COUNTS = 10000     # far enough past the stop that the servo keeps pr
 
 
 def zero_all(hand, stall_speed: float = 5.0, confirm_s: float = 1.0,
-             zero_torque=None, creep_speed: int = 50,
-             transit_speed: int = 100, transit_acc: int = 20,
+             zero_torque=None, creep_speed: int = 200,
+             transit_speed: int = 800, transit_acc: int = 200,
              transit_torque: int = 400, transit_tolerance: int = 80,
              transit_timeout: float = 5.0, stall_timeout: float = 30.0,
              save: bool = True) -> bool:

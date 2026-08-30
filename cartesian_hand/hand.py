@@ -120,7 +120,8 @@ STANDARD_TORQUE = [50, 50, 50, 300, 50, 50, 50]
 # The cost of raising these is the force each DOF ends up pressing into its
 # hard stop with, on a printed rack. If a joint starts sounding loaded at the
 # end of a seek, come back down rather than further up.
-ZEROING_TORQUE = [150, 100, 100, 350, 100, 100, 100]
+# ZEROING_TORQUE = [150, 100, 100, 350, 100, 100, 100]
+ZEROING_TORQUE = [200, 100, 100, 500, 200, 100, 100]
 
 # Measured offsets outlive any one install, so they must not sit inside the
 # package directory: `pip install -e .` wipes it, and a lost calibration means
@@ -505,6 +506,20 @@ def offset_timestamp(name: str, path: str = CALIB_PATH):
     return entry.get("timestamp") if isinstance(entry, dict) else None
 
 
+# The FT servo driver's Goal_Acc register is one byte (HLSCL.h WritePosEx),
+# and the C++ wrapper truncates int -> u8 with no bounds check
+# (ft_servo_driver.hpp set_positions: `std::vector<u8> acc_buf(acc.begin(), ...)`),
+# so an out-of-range acc silently wraps mod 256 instead of erroring. Caught here,
+# at the only two places acc reaches the driver, rather than in the control loop
+# where raising would trip the loop's error handler and drop torque.
+def _check_acc_range(acc):
+    if np.any((np.atleast_1d(np.asarray(acc)) < 0) | (np.atleast_1d(np.asarray(acc)) > 255)):
+        raise ValueError(
+            f"acc={acc} out of range: the driver's Goal_Acc register is a single "
+            f"byte (0-255). A larger value silently wraps mod 256 in the C++ "
+            f"driver instead of erroring.")
+
+
 # ══ The controller ════════════════════════════════════════════════════════════
 
 class CartesianHand:
@@ -791,6 +806,7 @@ class CartesianHand:
                 if speed is not None:
                     self._speed[d] = int(speed)
                 if acc is not None:
+                    _check_acc_range(acc)
                     self._acc[d] = int(acc)
                 if torque is not None:
                     self._torque[d] = int(torque)
@@ -858,6 +874,7 @@ class CartesianHand:
                 if speed_v is not None:
                     self._speed[d] = int(speed_v) if np.isscalar(speed_v) else int(speed_v[d])
                 if acc_v is not None:
+                    _check_acc_range(acc_v)
                     self._acc[d] = int(acc_v) if np.isscalar(acc_v) else int(acc_v[d])
                 if torque_v is not None:
                     self._torque[d] = int(torque_v) if np.isscalar(torque_v) else int(torque_v[d])
