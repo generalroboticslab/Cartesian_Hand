@@ -133,7 +133,7 @@ limits and rate, not which servo is which.
 
 Names live in [`cartesian_hand/tasks/roles.py`](cartesian_hand/tasks/roles.py),
 with the groups tasks actually use: `JAWS`, `BASE_FINGERS`, `AUX_FINGERS`. The
-layout itself is `LAYOUT` in `hands.py`, and `standard_dofs(first_servo_id)`
+layout itself is `LAYOUT` in `hand.py`, and `standard_dofs(first_servo_id)`
 stamps it out with consecutive servo IDs — the only difference between the two
 hands.
 
@@ -144,10 +144,11 @@ runs. See Known issues.
 
 ## Configuration
 
-Hands are defined in [`cartesian_hand/hands.py`](cartesian_hand/hands.py). It is
-a Python module rather than a data file because the hands are near-identical:
-they differ only in serial port and servo ID block, so one helper covers both
-without repeating the DOF table.
+Hands are defined at the top of
+[`cartesian_hand/hand.py`](cartesian_hand/hand.py). It is a Python module rather
+than a data file because the hands are near-identical: they differ only in
+serial port and servo ID block, so one helper covers both without repeating the
+DOF table.
 
 ```python
 HAND_2 = HandConfig(
@@ -159,9 +160,11 @@ HAND_2 = HandConfig(
 )
 ```
 
-`hands.py` holds both the types and the values, so configuring a hand means
-opening one file. To add a hand, build a `HandConfig` and add it to `HANDS`. To change which hand
-commands use by default, edit `DEFAULT_HAND`.
+`hand.py` opens with the tunables — `LAYOUT`, `STANDARD_TRAVEL`,
+`STANDARD_TORQUE`, `ZEROING_TORQUE`, `DEFAULT_HAND` — then the types, then the
+hand definitions, then the controller. Configuring a hand means reading the top
+of one file and stopping there. To add a hand, build a `HandConfig` and add it
+to `HANDS`. To change which hand commands use by default, edit `DEFAULT_HAND`.
 
 Prefer a `/dev/serial/by-id/` path over `/dev/ttyACM0`. ACM numbers are handed
 out in enumeration order, so with two hands plugged in, whichever powers up
@@ -279,8 +282,9 @@ Hardware is not the twin, so `run_policy` is not a bare loop:
 
 - Slew limiting (`max_delta`, default 0.05 normalized units per step). A twin
   can teleport a joint between steps. A servo answers the same command with
-  maximum current. At 60mm of travel and 50Hz the default caps a DOF at 3mm per
-  step. Pass `--max-delta 0` to disable it, but measure the current draw first.
+  maximum current. At 50mm of travel and 50Hz the default caps a DOF at 2.5mm
+  per step. Pass `--max-delta 0` to disable it, but measure the current draw
+  first.
 - Non-finite actions are rejected. A diverged network should not reach the bus.
 - Actions are clipped to real travel limits, so a saturating policy presses
   against the joint limit instead of commanding past it.
@@ -320,11 +324,12 @@ actually run on servos:
   sign-magnitude encoding in the driver is exercised by real traffic.
 - Normalized `move()` actions track. Six DOFs converge to within 0.03mm; the z
   stage needs its raised torque to do so (see Motion gains above).
-- Zeroing uses per-DOF creep torque (`hands.ZEROING_TORQUE`) — fingers at 30,
-  z at 150, jaws at 50 — instead of a flat 50 that stalled the fingers short of
-  their stops and left z in mid-air. After a full zeroing on `hand_2`, all seven
-  DOFs park at mid travel and read 29.7-30.0mm against the new offsets. Two
-  consecutive runs agree to within 7 counts. See Known issues.
+- Zeroing uses per-DOF creep torque (`hand.ZEROING_TORQUE`), higher on the z
+  stage, instead of a flat value that left z in mid-air. Verified on `hand_2` at
+  the old table: all seven DOFs park at mid travel and read 29.7-30.0mm against
+  the new offsets, two consecutive runs agreeing to within 7 counts. The table
+  has since been doubled for `hand_1` and that result has not been re-taken. See
+  Known issues.
 - The control loop is two bus packets per step regardless of gains: one
   sync-read covering all seven servos, one sync-write carrying per-joint
   positions and gains. Measured on `hand_2`:
@@ -419,12 +424,12 @@ Shared motion helpers (`approach`, `squeeze`, `wait_for_stall`) are in
 
 ```
 cartesian_hand/
-  hands.py         what a hand is, and which hands exist: HandConfig, unit
-                   conversion, the policy contract, and the definitions
-  hand.py          CartesianHand: control loop, motion commands, state,
-                   zero-offset persistence
+  hand.py          tunables, then what a hand is (HandConfig, unit conversion,
+                   the policy contract), then which hands exist, then
+                   CartesianHand: control loop, motion, zero-offset persistence
   policy.py        Policy contract, run_policy, Rollout, replay
-  driver.py        extension loading, MockServo
+  servo.py         how to talk to a serial bus of FT servos: loads the compiled
+                   extension, or returns MockServo for offline runs
   __main__.py      the single entry point, a tyro CLI over these dataclasses
   tasks/           one module per task, auto-registered
 hardware_bindings/ submodule: IMU, motor and servo bindings. Only ft_servo/ is
@@ -434,9 +439,16 @@ hardware_bindings/ submodule: IMU, motor and servo bindings. Only ft_servo/ is
 examples/          twin-to-real worked example
 ```
 
-Four files, in the order you would read them: `hands.py` says what the hardware
-is, `hand.py` how to drive it, `policy.py` how a twin-developed policy reaches
-it, and `__main__.py` how to run any of it from a shell.
+Three files, in the order you would read them: `hand.py` says what the hardware
+is and how to drive it, `policy.py` how a twin-developed policy reaches it, and
+`__main__.py` how to run any of it from a shell.
+
+`hand.py` was two files until recently, `hands.py` and `hand.py`, splitting
+description from behaviour. The names differed by one character and nothing else
+told you which was which. The split was justified on the grounds that the twin
+must not import a serial driver it cannot build — but that was never why it
+worked: `servo.open_driver` imports the compiled extension lazily, inside the
+call, so importing the merged module still touches no hardware.
 
 `hardware_bindings/ft_servo/ft_servo_python_only.py` is not one of them. It is a
 pure-Python reimplementation of the same SCS wire protocol the C++ extension
@@ -460,18 +472,28 @@ with nothing enforcing it.
 **`max_mm` is a limit, not a description.** There is one hard stop per DOF, the
 one zeroing seeks. The far end of each rail is open by design: drive past it and
 the carriage leaves the slider and the servo spins free. `max_mm` is the only
-thing that stops that happening, and it has never been measured. The v2 CAD says
-50mm on the z stage and jaws and 55mm on the fingers; the config says 60.
+thing that stops that happening, and it has never been measured. The config
+carries the v2 CAD figures — 50mm on the z stage and jaws, 55mm on the fingers —
+in `hand.STANDARD_TRAVEL`, one shared table because a joint limit belongs to
+the model and the two hands are two physical realizations of it.
+
+It used to say a flat 60 on all seven, which was over-travel on every DOF and
+10mm of it on the jaws and z. `standard_dofs` took a single scalar and stamped
+it across the whole layout, so the per-DOF plumbing that already existed
+everywhere else — `lower`, `upper`, `clamp`, `normalize`, `contract` — was being
+handed one number seven times.
 
 It cannot be measured by driving. A `travel` task tried — seek the far stop,
 report the span — and the premise is false, because there is no far stop to
 find. Run on `hand_2` it took six of seven carriages off their rails. Deleted;
 the one measurement it produced before things came apart is that DOF 0 stalled
 2428 counts from its zero, 29.8mm at the configured `counts_per_mm`, against a
-`max_mm` of 60.
+CAD figure of 50. One datum from a run that was itself coming apart: enough to
+distrust the 50, not enough to replace it.
 
-Measure with calipers and type the number in. `counts_per_mm` is hand-wide, so
-one axis calibrates all seven; `max_mm` is per-DOF and each rail needs its own.
+Measure with calipers and type the numbers into `STANDARD_TRAVEL`.
+`counts_per_mm` is hand-wide, so one axis calibrates all seven; travel is
+per-DOF and each rail needs its own.
 
 Everything that commands `max_mm` directly is loaded against this: `demo`
 (`hand.config.upper`, all seven DOFs), the quickstart in `__init__.py`, a
@@ -480,8 +502,13 @@ lift to `cfg[Z].max_mm`.
 
 Travel above or below one 4096-count revolution also decides whether stale zero
 offsets can be recovered arithmetically or the hand must be re-zeroed after
-every power cycle — see *Saved zero offsets go stale by whole turns* below. 60mm
-is 1.19 turns, 50mm is 0.99, and DOF 0's 29.8mm would be 0.59.
+every power cycle — see *Saved zero offsets go stale by whole turns* below. One
+turn is 50.27mm at the derived `counts_per_mm`, and `_reconcile_offsets` tests
+`(span < turn).all()`, so it is the *worst* DOF that decides for all seven. The
+jaws and z at 50mm come in at 0.99 turns, but the fingers at 55mm are 1.09, so
+the hand still lands in the branch that cannot recover. Bringing the fingers
+under 50.27 would buy it back. The old flat 60 was 1.19; DOF 0's measured 29.8mm
+would be 0.59.
 
 **Contact detection never detected contact.** `wait_for_stall` took its
 threshold as a distance per poll, defaulting to 0.5mm over a 0.05s poll. That is
@@ -498,12 +525,35 @@ Fixed by making the threshold a rate. Verified on `hand_2`: a jaw commanded from
 29.7mm to 12.0mm now reports 12.0, and closing to the hard stop reports 0.0.
 Both used to report 29.7.
 
-The counts-level variant `wait_for_stall_counts`, which zeroing uses, had the
-same shape but sat just inside its margin: 5 counts per 0.1s poll against a
-creep that covers exactly 5 counts in that time. It worked — zeroing is
-reproducible on hardware — but only because the coin landed the right way up. It
-now takes counts/sec against a measured interval, defaulting to half the creep
-speed, so travelling and stalled are a factor of two apart in each direction.
+**Zeroing recorded hard stops in the middle of the rail on `hand_1`.** The
+counts-level variant `wait_for_stall_counts` had the same shape as the bug
+above, and a first pass only moved it inside its margin: counts/sec against a
+measured interval, thresholded at half the creep speed. That worked on `hand_2`
+and failed on `hand_1`, which is the stiffer of the two.
+
+The margin was never as wide as the numbers looked, because the encoder
+quantizes to whole counts. A poll of length `p` can only resolve speed in steps
+of `1/p`, so a 0.1s poll reads 0, 10, 20, 30 counts/sec and nothing between. A
+25 counts/sec threshold is two and a half of those steps wide: a DOF creeping at
+the commanded 50 counts/sec has to clear 3 counts per poll out of a 5-count
+budget, and any two polls that land on the same count read as stopped.
+`confirm_count=2` meant two such polls — 0.2s — were the whole confirmation.
+`hand_1` has more friction, so it creeps slower for the same command, and the
+budget goes to zero. Reproduced offline: at 22 counts/sec the old detector
+declares a hard stop on the second poll, 2 counts into travel.
+
+The fix is to measure net displacement over a whole window rather than a run of
+individually slow polls, and let the window carry the sensitivity. Over 1.0s a
+travelling DOF moves tens of counts while one against its stop dithers by one or
+two, so the threshold drops to 5 counts/sec and sits an order of magnitude clear
+of both. `--stall-speed` is the knob if a hand needs another number; the cost of
+the wider window is up to 2s of latency after the real stop, since it tumbles
+rather than slides.
+
+The mm variant `wait_for_stall` still has the un-widened form — 0.3mm/s on a
+0.05s poll, where one count is 0.0123mm, so about two quantization steps. Same
+shape, not yet hit, not changed here: contact detection stops against soft
+objects and the thresholds would want re-measuring against real grasps.
 
 **Saved zero offsets go stale by whole turns.** A servo reports (turns since
 power-up × `counts_per_rev`) + the angle within the current turn. The angle
@@ -530,10 +580,13 @@ fit: there are no candidates to score.
 
 Past one turn of travel two real positions share an angle. The servo cannot tell
 them apart and neither can we, so that branch refuses and asks for zeroing.
-Which branch runs depends entirely on `max_mm`, and `max_mm` has never been
-measured: at the configured 60mm travel is 1.19 turns and offsets are
-unrecoverable, at the 50mm the CAD suggests it is 0.99 and the ambiguity does
-not exist. Running `travel` decides it.
+Which branch runs depends entirely on travel, and travel has never been
+measured. The test is `.all()`, so the widest DOF decides for the whole hand.
+The configured CAD figures put the jaws and z at 0.99 turns but the fingers at
+1.09, so offsets stay unrecoverable; the old flat 60 was 1.19 on all seven.
+Getting every rail under 50.27mm removes the ambiguity outright. Calipers decide
+it — the `travel` task that was meant to has been deleted, because there is no
+far stop for it to seek.
 
 **A failed read used to decode into a plausible position.** `SCS::readWord`
 returns `-1` on any failure — no reply, wrong ID, bad length, CRC mismatch — and
@@ -544,8 +597,9 @@ about 402mm**. The sentinel and real data shared one channel.
 Three guards were written against exactly this and were dead code, because the
 binding returned `int` and never `None`: `hand.py`'s `if counts is not None`,
 and both null-checks in `primitives.py`. Worst case, `wait_for_stall_counts`
-uses `confirm_count=2`, so three consecutive dropped frames read as movement 0
-and would have registered a false hard stop at 32769 — saved as a zero offset.
+confirmed a stall over two polls, so three consecutive dropped frames read as
+movement 0 and would have registered a false hard stop at 32769 — saved as a
+zero offset. (Its window no longer treats a dropped read as a sample at all.)
 
 Fixed: the driver's reads now return `None` on failure, using `getLastError()`,
 which is the channel that was there all along. The vectorized `read_positions`
@@ -575,13 +629,19 @@ something different:
   torque needed to *lift* the stage; this is the seeking direction only.
 - **Jaws (DOF 0, 4)** were the only DOFs where flat-50 was right.
 
-The mechanism behind the finger numbers is not established — binding, stiction
-and stall-detector sensitivity all fit the observation. The numbers are
-measured; the explanation would be a guess.
+The mechanism behind the finger numbers was never established — binding,
+stiction and stall-detector sensitivity all fit the observation.
 
-`hands.ZEROING_TORQUE = [50, 30, 30, 150, 50, 30, 30]` is the per-DOF default.
-Pass `--zero-torque N` to broadcast a scalar (legacy behaviour) for any of the
-seven that doesn't match its default.
+It was the stall detector. Every number above was bisected with the detector
+described two entries up, which scored a slow creep as a stop, so "stalls short
+at 50, reaches the end at 30" is as consistent with a false positive as with a
+mechanism that binds harder when pushed harder. The table has since been
+doubled to `[100, 60, 60, 300, 100, 60, 60]` to clear `hand_1`'s friction —
+one table for both hands, since a hard stop is the same physical feature on
+each and a second table is a second set of numbers to keep measured. Watch the
+first seek: the cost of raising creep torque is the force a DOF ends up
+pressing into a printed rack with. `--zero-torque N` broadcasts a flat value
+over the table.
 
 **The encoder turn-origin shift still stands.** A stored offset is not
 guaranteed to survive a power cycle: the encoder is absolute within one turn
