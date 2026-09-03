@@ -114,14 +114,17 @@ STANDARD_TORQUE = [50, 50, 50, 300, 50, 50, 50]
 # stop (see wait_for_stall_counts), so the observations they rest on are
 # suspect — in particular "the fingers stall short at 50 and reach the end at
 # 30", which is the shape of a detector false positive, not of a mechanism that
-# binds harder when pushed harder. Doubled here, with z taken to the torque
-# STANDARD_TORQUE already uses on that axis.
+# binds harder when pushed harder. Doubled from those.
 #
 # The cost of raising these is the force each DOF ends up pressing into its
-# hard stop with, on a printed rack. If a joint starts sounding loaded at the
-# end of a seek, come back down rather than further up.
-# ZEROING_TORQUE = [150, 100, 100, 350, 100, 100, 100]
-ZEROING_TORQUE = [200, 100, 100, 500, 200, 100, 100]
+# hard stop with, on a printed rack. [200, 100, 100, 500, 200, 100, 100] and
+# then z at 350 both seeked audibly hard, so this is the walk back down. z is
+# bracketed from both sides now: 350 too hard, 200 too weak, 250 here. It sits
+# above the six horizontal DOFs because it carries the aux gripper's weight, but
+# below STANDARD_TORQUE's 300: that number is the floor for *lifting* the stage,
+# and zeroing presses it down into its stop with gravity helping.
+# If a joint still sounds loaded at the end of a seek, come down further.
+ZEROING_TORQUE = [150, 50, 50, 250, 150, 50, 50]
 
 # Measured offsets outlive any one install, so they must not sit inside the
 # package directory: `pip install -e .` wipes it, and a lost calibration means
@@ -277,6 +280,24 @@ class HandConfig:
     def dofs_on(self, axis: str) -> list:
         """DOF ids driving a given axis. Lets tasks say 'the y jaws' not '[0, 4]'."""
         return [i for i, d in enumerate(self.dofs) if d.axis == axis]
+
+    def clamped_mm(self, dof_id: int, want: float) -> float:
+        """A goal in mm, bounded by the DOF's travel table.
+
+        Tasks ask for the clearance they need and get it back capped. They must
+        never use `max_mm` itself: the table is CAD, and the one real measurement
+        contradicts it -- DOF 0 on hand_2 stalled 29.8mm from zero against the
+        table's 50.0. The far end of every rail is open by design, so commanding
+        the table's value walks the carriage off its slider, and a clamp cannot
+        help there because the clamp uses the same wrong number. Asking for a
+        clearance that happens to be under the limit is safe under a right table
+        and a wrong one both.
+
+        Lives on the config rather than in a task because every task needs it and
+        the second copy is the one that gets it wrong.
+        """
+        d = self.dofs[dof_id]
+        return min(max(want, d.min_mm), d.max_mm)
 
     def __getitem__(self, dof_id: int) -> Dof:
         return self.dofs[dof_id]
@@ -901,6 +922,66 @@ class CartesianHand:
     def move(self, action, **kwargs) -> bool:
         """Command a normalized [-1, 1] action vector. The policy-facing move."""
         return self.set_pos(self.config.denormalize(action), **kwargs)
+
+    def run_program(self, motions, timeout: float = 180.0):
+        """Drive a `motions.Motions` program to completion. The tensor peer of set_pos.
+
+        The control loop keeps doing the bus traffic; this writes the same two
+        standing registers `set_pos` writes -- `target` and `_torque` -- once
+        per tick, from the program instead of from an argument. So a program is
+        not a second way to drive the hand, it is a different author of the same
+        commands, and `_step` needs no changes to support it.
+
+        Positions are copied out per tick rather than aliased into a torch view.
+        The copy is seven floats at 50Hz, which is nothing, and it removes the
+        whole class of bug where the bus thread writes `actual` underneath a
+        tensor the engine is mid-read of.
+
+        Returns the Motions, whose `outcome` says how every row ended. Raises on
+        timeout, because a program that has not finished is not a result.
+        """
+        import torch                 # only programs need torch; set_pos does not
+
+        if not self.running:
+            raise RuntimeError(f"[{self.name}] run_program needs a running control loop")
+        self.require_zeroed()
+
+        read = lambda: torch.from_numpy(self.positions.astype(np.float32))[None, :]
+        with self.lock:
+            torque0 = torch.from_numpy(self._torque.astype(np.float32))[None, :]
+        motions.start(read(), torque0)
+
+        period = 1.0 / self.control_hz
+        next_tick = time.time()
+        deadline = next_tick + timeout
+        while not motions.done():
+            goal, torque = motions.step_once(read())
+            with self.lock:
+                # Clamped, exactly as set_pos clamps: the travel table is the
+                # only thing stopping a carriage from being driven off the open
+                # end of its rail, and a program is no more trustworthy about
+                # that than a task calling set_pos by hand.
+                self.target[:] = self.config.clamp(goal[0].numpy())
+                self._torque[:] = torque[0].numpy()
+
+            if self._loop_error is not None:
+                raise RuntimeError(f"[{self.name}] control loop died: {self._loop_error}")
+            now = time.time()
+            if now > deadline:
+                raise RuntimeError(
+                    f"[{self.name}] program did not finish in {timeout}s "
+                    f"(step {motions.step.tolist()} of {motions.K})")
+            # Absolute deadline, not `t0 + period - elapsed`: measuring from the
+            # top of each tick adds the loop's own overshoot to every period, so
+            # the tick rate drifts slow and a timeout denominated in ticks means
+            # a different wall-clock duration on every machine. Resync rather
+            # than fire a burst of catch-up ticks if a tick ran long.
+            next_tick += period
+            if next_tick < now:
+                next_tick = now
+            else:
+                time.sleep(next_tick - now)
+        return motions
 
     # ── Monitoring ────────────────────────────────────────────────────────────
 
