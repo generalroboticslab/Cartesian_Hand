@@ -305,10 +305,11 @@ slow.
 
 ### Primitives
 
-`primitives.py` serves both controller forms. The legacy helpers `twist`, `tilt`,
-`rotate_in_place`, and `move_until_stuck` fill a `Step`; they exist where joint
-pairing or calibrated gains would otherwise be re-derived incorrectly. A helper
-that only renames `Step.set` does not belong there.
+`primitives.py` serves both controller forms. One legacy helper is left, `tilt`,
+which fills a `Step` for the task of the same name; it earns its place because
+the four-way joint pairing is what a caller gets wrong, not the `Step.set` call.
+A helper that only renames `Step.set` does not belong there, which is why
+`twist`, `rotate_in_place` and `move_until_stuck` are gone.
 
 The direct functions are closed-loop behaviors:
 
@@ -318,7 +319,7 @@ The direct functions are closed-loop behaviors:
   goal with no object;
 - `twist_stroke` owns release, finger reset, re-grip, and one twist;
 - `strokes_for_revolutions` turns a measured radius into a per-environment
-  stroke count, and `joint_mask` names a static mechanism group.
+  stroke count.
 
 `twist_stroke` takes two optional per-environment arguments, because three tasks
 need the same stroke and only differ in these:

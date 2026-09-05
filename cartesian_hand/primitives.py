@@ -2,10 +2,11 @@
 
 Three sections, in dependency order.
 
-1. **`Step` helpers** -- `twist`, `tilt`, `rotate_in_place`. They fill one
-   `motions.Step`, keeping the legacy `Motions` tasks (`zero`, `tilt`) readable:
+1. **`Step` helper** -- `tilt`. It fills one `motions.Step`, keeping the legacy
+   `Motions` task that uses it readable, and exists because the four-way joint
+   pairing is the thing a caller gets wrong, not the `Step.set` call:
 
-       twist(p.step(), AUX_LEFT, AUX_RIGHT, span, squeeze)
+       tilt(p.step(), BASE_LEFT, BASE_RIGHT, AUX_LEFT, AUX_RIGHT, span, torque)
 
 2. **Closed-loop primitives** -- `move_to`, `close_until_contact`, `hold`, and
    the composite `twist_stroke`. Unlike aliases for `Step.set`, these own
@@ -37,28 +38,9 @@ from dataclasses import dataclass, replace
 
 import torch
 
-from .config import (AUX_LEFT, AUX_RIGHT, BASE_LEFT, BASE_RIGHT, LABELS, Z,
-                     HandConfig)
+from .config import LABELS, Z, HandConfig
 from .motions import Step
 from .policy import Action, Observation
-
-
-def twist(step: Step, left_joint: int, right_joint: int, span: float,
-          torque: float, timeout_s: float = 6.0,
-          when: torch.Tensor | None = None) -> Step:
-    """The paired fingers' coordinated half-twist: left to 0, right to `span`.
-
-    Ids and goals are built together so a caller cannot line the wrong number up
-    against the wrong finger -- which is how the aux fingers ended up reversed
-    once already. Swapping the two id arguments is what runs the twist backwards,
-    so a stroke and its reset are the same call with the ids exchanged.
-
-    A full turn is two of these with the object re-gripped between, which is what
-    the stroke phase of `tasks.cap.build` emits.
-    """
-    return step.set([left_joint, right_joint],
-                    torch.tensor([[0.0, float(span)]], device=step.device),
-                    torque, "goal", timeout_s, when)
 
 
 def tilt(step: Step, stage_a: int, stage_b: int, other_a: int, other_b: int,
@@ -78,23 +60,6 @@ def tilt(step: Step, stage_a: int, stage_b: int, other_a: int, other_b: int,
             f"({stage_a}, {stage_b}) and ({other_a}, {other_b})")
     return step.set([stage_a, stage_b, other_a, other_b],
                     torch.tensor([[float(span), float(span), 0.0, 0.0]],
-                                 device=step.device),
-                    torque, "goal", timeout_s, when)
-
-
-def rotate_in_place(step: Step, span: float, torque: float,
-                    timeout_s: float = 6.0,
-                    when: torch.Tensor | None = None) -> Step:
-    """Yaw the object about the vertical axis without translating it.
-
-    Two opposing twists, one per stage, so the object's centre holds still on
-    average. Built here rather than as two `twist` calls in a task for the same
-    reason `twist` exists: the four-way pairing is the primitive, it is
-    positional in LAYOUT order, and the runtime has no other clue which joint
-    opposes which.
-    """
-    return step.set([BASE_LEFT, BASE_RIGHT, AUX_LEFT, AUX_RIGHT],
-                    torch.tensor([[float(span), 0.0, 0.0, float(span)]],
                                  device=step.device),
                     torque, "goal", timeout_s, when)
 
@@ -755,18 +720,6 @@ def _check_press(press: TwistPress | None, n: int, joints: int,
             raise ValueError(f"press.{name} must be [N], got {tuple(value.shape)}")
         if value.device != device:
             raise ValueError(f"press.{name} must be on {device}")
-
-
-def joint_mask(joint_ids: torch.Tensor, selected: Rows[int]) -> torch.Tensor:
-    """`[J]` bool selecting a named mechanism group.
-
-    The Python loop is over `LAYOUT`'s static roles, never over anything a
-    sensor said, so it costs one build per tick and no synchronisation.
-    """
-    mask = torch.zeros_like(joint_ids, dtype=torch.bool)
-    for dof in selected:
-        mask |= joint_ids == dof
-    return mask
 
 
 def strokes_for_revolutions(revolutions: torch.Tensor, radius_mm: torch.Tensor,

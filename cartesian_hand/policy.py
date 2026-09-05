@@ -30,23 +30,6 @@ class Action:
     effort_limit: torch.Tensor      # [N, J], normalized to [0, 1]
 
 
-@dataclass(frozen=True, slots=True)
-class HoldParameters:
-    """Typed, batched parameters for the smallest useful direct policy."""
-
-    goal_mm: torch.Tensor           # [N, J]
-    max_speed_mm_s: torch.Tensor    # [N, J]
-    effort_limit: torch.Tensor      # [N, J]
-    duration_ticks: torch.Tensor    # [N] integer
-
-
-@dataclass(frozen=True, slots=True)
-class HoldState:
-    elapsed_ticks: torch.Tensor     # [N] integer
-    done: torch.Tensor              # [N] bool
-    failed: torch.Tensor            # [N] bool
-
-
 class PolicyState(Protocol):
     @property
     def done(self) -> torch.Tensor: ...
@@ -66,40 +49,6 @@ class Policy(Protocol[StateT]):
 
     def step(self, observation: Observation,
              state: StateT) -> tuple[Action, StateT]: ...
-
-
-class HoldPolicy:
-    """Command a typed pose for a fixed number of control ticks."""
-
-    def __init__(self, parameters: HoldParameters):
-        self.parameters = parameters
-
-    def initial_state(self, observation: Observation) -> HoldState:
-        _check_observation(observation)
-        _check_parameters(self.parameters, observation.position_mm)
-        n = observation.position_mm.shape[0]
-        device = observation.position_mm.device
-        return HoldState(
-            elapsed_ticks=torch.zeros(n, dtype=torch.int64, device=device),
-            done=torch.zeros(n, dtype=torch.bool, device=device),
-            failed=torch.zeros(n, dtype=torch.bool, device=device),
-        )
-
-    def step(self, observation: Observation,
-             state: HoldState) -> tuple[Action, HoldState]:
-        """Pure tensor tick; environments finish independently."""
-        active = ~state.done
-        elapsed = state.elapsed_ticks + active.to(state.elapsed_ticks.dtype)
-        next_state = HoldState(
-            elapsed_ticks=elapsed,
-            done=state.done | (elapsed >= self.parameters.duration_ticks),
-            failed=state.failed,
-        )
-        return Action(
-            goal_mm=self.parameters.goal_mm,
-            max_speed_mm_s=self.parameters.max_speed_mm_s,
-            effort_limit=self.parameters.effort_limit,
-        ), next_state
 
 
 VELOCITY_WINDOW_TICKS = 10
@@ -174,35 +123,6 @@ class PolicyRunner(Generic[StateT]):
 
     def failed(self) -> bool:
         return self.state is not None and bool(self.state.failed.any())
-
-
-def _check_observation(observation: Observation) -> None:
-    shape = observation.position_mm.shape
-    if len(shape) != 2:
-        raise ValueError(f"position_mm must be [N, J], got {shape}")
-    if observation.velocity_mm_s.shape != shape:
-        raise ValueError("velocity_mm_s must match position_mm")
-    if observation.contact.shape != shape or observation.contact.dtype != torch.bool:
-        raise ValueError("contact must be bool [N, J] matching position_mm")
-    if observation.elapsed_ticks.shape != shape[:1]:
-        raise ValueError("elapsed_ticks must be [N]")
-
-
-def _check_parameters(parameters: HoldParameters,
-                      reference: torch.Tensor) -> None:
-    shape = reference.shape
-    for name, value in (
-            ("goal_mm", parameters.goal_mm),
-            ("max_speed_mm_s", parameters.max_speed_mm_s),
-            ("effort_limit", parameters.effort_limit)):
-        if value.shape != shape:
-            raise ValueError(f"{name} must be {tuple(shape)}, got {tuple(value.shape)}")
-    if parameters.duration_ticks.shape != shape[:1]:
-        raise ValueError("duration_ticks must be [N]")
-    tensors = (parameters.goal_mm, parameters.max_speed_mm_s,
-               parameters.effort_limit, parameters.duration_ticks)
-    if any(value.device != reference.device for value in tensors):
-        raise ValueError("policy parameters must share the observation device")
 
 
 def _check_action(action: Action, reference: torch.Tensor) -> None:
