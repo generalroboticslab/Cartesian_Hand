@@ -47,7 +47,7 @@ class Config:
     label: str = "Draw syringe"
     sets_datum: bool = False
 
-    clearance_z: float = field(default=5.0, metadata={"tune": (2.0, 20.0)})
+    clearance_z: float = field(default=10.0, metadata={"tune": (2.0, 20.0)})
     """Z height the aux jaw grips the plunger at for the low point of each pull,
     and where it pushes the plunger back down to, mm. A floor: below it the
     stage drives into the syringe's flanges before the plunger stalls it."""
