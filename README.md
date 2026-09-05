@@ -53,9 +53,6 @@ python -m cartesian_hand.studio --teach                  # limp, pose it by hand
 # simulation, same task files (object-free tasks only for now)
 python -m cartesian_hand.sim --task zero
 python -m cartesian_hand.sim --task zero --n-envs 4096 --warp   # GPU, batched
-
-# offline checks
-python tests/test_tasks.py                 # toy hand, no bus, no MuJoCo
 ```
 
 Every entry point is [tyro](https://brentyi.github.io/tyro/) over a function
@@ -109,9 +106,9 @@ bench fact, not a convention inferred from left/right labels.
 
 **The ordering is authoritative for the simulation.** DOF order here is the order
 the twin's actuators must be in, not the other way round. `LAYOUT`'s axis
-sequence y,x,x,z,y,x,x matches the MJCF actuator order one for one, and
-`tests/test_studio.py` walks `model.actuator_trnid` to assert it rather than
-trusting the comment.
+sequence y,x,x,z,y,x,x matches the MJCF actuator order one for one, established
+by walking `model.actuator_trnid` rather than by reading the comment. Nothing
+asserts it now; see Test suite.
 
 ## Writing a task
 
@@ -225,8 +222,8 @@ constructor is the configuration. There is no `configure()` hook to learn, and
 
 **`from . import cap`, not `from .cap import Config`.** The second binds `Config`
 into the variant's own namespace, which is exactly where `tasks.config()` looks —
-so the variant would answer with cap's `label` and put a second "Open cap" on the
-panel. Reaching through the module is what keeps the button opt-in, and giving
+so the variant would answer with cap's `label` and put a second "Cycle cap" on
+the panel. Reaching through the module is what keeps the button opt-in, and giving
 every variant a button would fill the panel with them.
 
 Module docstrings are the bench log, and they have to be. A result kept only in
@@ -283,12 +280,28 @@ waiting each timeout out in turn. `tilt` shipped with 50 and 80 against hand_2's
 floor of 100 at budgets of about 20 s a row, and `scissors` closed its contact
 probe at 150 against hand_1's 250. The floor applies to a probe as much as to
 free travel: a contact seek wants the *lightest* push that still travels, and
-below this it is not a light push, it is no push. z is excluded — its floor is
-gravity rather than friction, and a descent deliberately commands less (see
-`cap`'s split between descent and lift). Asserted per row on the issued programs
-by `test_no_program_row_is_commanded_below_its_own_torque_floor`, because
-mujoco, `MockServo` and the toy hand all ignore the torque register, so on every
-backend this looks correct and merely slow.
+below this it is not a light push, it is no push.
+
+**z is not excluded, and an earlier version of this file said it was.** The
+exemption reasoned that z's resistance is gravity rather than friction and that
+a descent should command less, so `Sequence` left `travel_effort[Z]` at the flat
+travel torque — 50 against a measured z floor of 800 on both hands. `cap`'s
+descent names z with no explicit effort, so it could not move the stage at all,
+burned its deadline, and retired the environment, which silently skipped every
+row after it. Both halves of the reasoning are wrong: effort is a force *cap*,
+so a free descent never approaches it and the exemption bought no gentleness,
+and 50 against a floor of 800 is not gentle, it is immobile in both directions.
+`Sequence.travel_effort` is now `maximum(flat, floor)` on every DOF.
+
+An explicit `effort=` on a row is still not floored, which is deliberate: a row
+that presses z into something names its own number, and `lift_effort` and
+`TwistPress.effort` already do. The consequence to watch for is a row that names
+an explicit z effort *below* the floor, which now stands unchanged and probably
+cannot descend.
+
+Nothing checks any of this. mujoco, `MockServo` and the toy hand all ignore the
+torque register, so on every backend a below-floor row looks correct and merely
+slow.
 
 ### Primitives
 
@@ -307,18 +320,18 @@ The direct functions are closed-loop behaviors:
 - `strokes_for_revolutions` turns a measured radius into a per-environment
   stroke count, and `joint_mask` names a static mechanism group.
 
-`twist_stroke` takes two optional per-environment arguments, because four tasks
+`twist_stroke` takes two optional per-environment arguments, because three tasks
 need the same stroke and only differ in these:
 
 - **`reverse` (`[N]` bool)** exchanges which finger opens the gap and which
-  closes it, which is what runs the stroke the other way round. `bulb` unscrews
-  and re-threads in a *single* task, so direction has to live in tensor state
-  rather than at the call site.
+  closes it, which is what runs the stroke the other way round. `cap` unscrews
+  and re-threads the same cap in a *single* task, so direction has to live in
+  tensor state rather than at the call site.
 - **`press` (`TwistPress`)** drives a third axis to depth after the re-grip,
-  holds it through the turn, and backs off before the next release -- a bulb
-  going into its socket and a screw being driven in engage by depth as well as
-  rotation. Its `return_effort` is separate from `effort` because backing off
-  *raises* the stage and z torque is directional.
+  holds it through the turn, and backs off before the next release -- a cap
+  being threaded back onto its bottle and a screw being driven in engage by
+  depth as well as rotation. Its `return_effort` is separate from `effort`
+  because backing off *raises* the stage and z torque is directional.
 
 An environment that configures no press skips both z phases on the transition
 itself rather than idling a tick in each, so a stroke without a press issues
@@ -341,9 +354,9 @@ seek commands `here - overtravel` in millimetres, and `counts_to_mm` has already
 applied `orientation` on the way in. A seek written in raw counts has to say
 `here - orientation * overtravel`, and that sign comes out wrong about half the
 time someone works it out again. It did, twice. Working in millimetres removes
-the mistake instead of correcting it. The cost is that `tests/test_tasks.py`
-asserts the resulting stall **in counts** per DOF, because the failure is
-invisible in millimetres.
+the mistake instead of correcting it. The cost is that a wrong sign is
+**invisible in millimetres** and can only be caught per DOF in counts, which
+nothing does today.
 
 ## Direct policies
 
@@ -360,13 +373,13 @@ and primitive code never indexes a parameter by string. Measurements may change
 values, masks, phases, and tensor counters, but never a Python loop bound or
 tensor shape.
 
-Six manipulation tasks are on this path, all transcribed from the implementation
-in `cartesian_hand_old_validated_real/tasks/`, which ran on real objects:
+Five manipulation tasks are on this path, all transcribed from the
+implementation in `cartesian_hand_old_validated_real/tasks/`, which ran on real
+objects:
 
 | task | from | what makes it its own file |
 |---|---|---|
-| `cap` | `caps_contact_based.py` | the canonical one; probe, twist, extract, present |
-| `bulb` | `light_bulb.py` | two grips at *different* torques (socket hard, glass soft), and it re-threads the bulb with a mirrored stroke plus a z press |
+| `cap` | `caps_contact_based.py` | the canonical one; probe, twist, extract, re-thread, present |
 | `screwdriver` | `manual_screw_driver.py` | both jaws hold **one** tool; the base jaw is taut-contact only and never squeezed. `cw` selects `reverse` + press |
 | `pipette` | `pipetting.py` | longest sequence; a twist-lock knob, then plunge and draw as one shared push-to-stall stroke |
 | `syringe` | `syringe.py` | no twist at all -- the repeating DOF is **z**, and the jaw re-grips the plunger higher each stroke |
@@ -377,23 +390,40 @@ overtravel must not pass the direct-action clamp that `studio.live` applies to
 every policy goal. `tilt` stays one too -- nothing in it is parameterised by a
 measurement.
 
-All five ports are transcriptions, not bench results. The sequences are
-validated; these implementations of them have not been run on the objects.
+These ports are transcriptions, not bench results. The sequences are validated;
+these implementations of them have not been run on the objects.
 
 `Sequence` is the reference direct manipulation policy. Its step machine
 runs the tested `cap` sequence as a row list:
 
 ```text
-Move(entry) -> Move(height) -> Hold(settle)
-   -> Probe(both jaws, grip held to the end)
-   -> Loop:
-        Twist(open/close, count from probed radius)
-   -> Move(release) -> Move(centre) -> Hold(centre hold)
-   -> Probe(regrip)
-   -> Move(lift) -> Move(cap clear) -> Hold(cap clear wait)
-   -> Move(cap align) -> Move(put back)
-   -> Move(let go) -> Move(present)
+Move  height          z down to the cap's top face
+Probe probe           close both jaws until stuck; measure the cap's radius
+Hold  grip            keep squeezing the bottle, from here to the end
+Loop  cycles
+  Twist open          unscrew. strokes = ceil(2*pi*r / finger span)
+  Move  release       open the aux jaw to radius + clearance
+  Move  centre        fingers to mid-span
+  Hold  centre hold   0.2 s, so profiled travel cannot overlap the re-grip
+  Probe regrip        close the aux jaw onto the cap
+  Move  lift          z up, carrying the cap
+  Move  cap clear     fingers closed, cap held above the bottle
+  Hold  cap clear wait
+  Move  cap align     fingers back to mid-span
+  Move  put back      z down to thread height
+  Twist close         the same stroke mirrored, pressing z down as it turns
+  Move  let go        open the aux jaw
+Move  present         fingers home
 ```
+
+Two things in that list carry the argument for this path. `Probe` records what
+it measured under a name (`measure={"radius": AUX_JAW}`) and every later row
+reads it back as `radius=lambda m: m.radius`; that is the whole measurement
+channel, with no dictionaries, registers or host-side branches. And the stroke
+count is written down nowhere. It is the cap's circumference over how far one
+finger can slide, known only once the jaws have closed and felt how big the cap
+is, which is exactly what a fixed `[N,J,K]` program cannot express because its
+length is fixed before it runs.
 
 A `Probe` latches a `grip` effort the tick contact is confirmed, so the body
 of a sequence never re-states the clamp. The base-jaw command remains in
@@ -547,7 +577,7 @@ the compiled `MjModel`, between two windows.
 ┌──────────────────┐                              ┌──────────────────┐
 │ tasks            │                              │ torque armed     │
 │  Zero hand       │                              │ mm err load °C   │
-│  Open cap ...    │       the hand, in 3D        │  (7 rows, 10 Hz) │
+│  Cycle cap ...   │       the hand, in 3D        │  (7 rows, 10 Hz) │
 │  tune a task ▸   │                              │ 0..6 goal   (mm) │
 │  TASK TIMELINE ▾ │                              │ tuning ▸         │
 └──────────────────┘                              └──────────────────┘
@@ -567,8 +597,8 @@ everything else and then taken out of flow by a stylesheet the page serves
 itself (`studio.TASK_MENU_CSS`). The selector counts DOM levels from a marker
 `<div>` up to the folder's root, so a viser client that adds or drops a wrapper
 renders the menu quietly back inside the right-hand panel. That is invisible to
-Python, so `tests/test_web_studio.py` drives a real browser and asserts the
-window's geometry; it skips where playwright or Chrome is missing.
+Python: checking it needs a real browser driven against the served page, which
+nothing does today.
 
 Numbers, not bars: 0.01 mm of tracking error is a real number and zero pixels,
 and a bar would have to be built wider than `config`'s travel to show a rail
@@ -801,8 +831,13 @@ exercise unit conversion, task sequencing, and the studio loop:
 
 ```bash
 python -m cartesian_hand.studio --mock --task zero
-for f in tests/test_*.py; do python "$f"; done
 ```
+
+> **Redirect `CARTESIAN_HAND_CALIB` before every mock or sim run.** A `zero` on
+> `MockServo` writes `zero_offsets.json` with the mock's stops, which overwrites
+> the calibration of whatever hand is plugged into the machine. The file is
+> gitignored, so the repository does not recover it. This has cost a bench
+> calibration once.
 
 The mock has no friction, no load-dependent stall and no following error. It
 tells you whether your control flow is right, not whether your grip will hold. It
@@ -826,19 +861,20 @@ cartesian_hand/
                  near-identical controllers in six files is how one deadline
                  bug got copy-pasted into all of them
     zero.py      find every hard stop, report it as the hand's zero
-    cap.py       probe, strokes, extract. Unscrewing a bottle cap
-    bulb.py      unscrew a bulb, then thread it back in
+    ready.py     send every DOF to mid travel; the studio's Reset button
+    cap.py       probe, strokes, extract, re-thread. A bottle cap
     screwdriver.py  turn a screwdriver either way; cw presses z
     pipette.py   twist-lock knob, then plunge and draw
     syringe.py   clamp the body, draw the plunger, dispense
     scissors.py  two-handle tool; z travel is the pivot
     tilt.py      grip with both stages, pitch the object
+  compose.py     writes a task file from a row list. Imports no GUI, so the
+                 dependency runs studio -> compose -> tasks and never back
   studio.py      the hardware backend: live loop plus the viser page (WebStudio)
   sim.py         the MuJoCo backend
   mjcf.py        model path and the DOF-to-joint map, split out of studio so
                  sim does not import a web server to find a qpos address
   servo.py       the serial bus, and MockServo for offline runs
-tests/           one file per module, plain asserts, no framework
 hardware_bindings/  submodule: IMU, motor and servo bindings. Only ft_servo/ is
                     compiled here, and it is the sole copy of the servo driver.
 ```
@@ -892,11 +928,11 @@ Not yet established:
   effort, and extraction sequence; only the mechanics are mocked. The stock
   MuJoCo model has no equivalent objects, so object simulation is not used as a
   completion gate.
-- **The five tasks ported from `cartesian_hand_old_validated_real/` are
-  transcriptions.** `bulb`, `screwdriver`, `pipette`, `syringe` and `scissors`
-  are covered by typed batched unit tests and enter the real executor path
-  correctly, but the *sequences* are what was validated on hardware, not these
-  implementations of them. Each needs its object and a calibrated hand.
+- **The four tasks ported from `cartesian_hand_old_validated_real/` are
+  transcriptions.** `screwdriver`, `pipette`, `syringe` and `scissors` enter the
+  real executor path correctly, but the *sequences* are what was validated on
+  hardware, not these implementations of them. Each needs its object and a
+  calibrated hand.
   Two deliberate divergences from the validated code are recorded in the task
   docstrings: `syringe` opens the aux jaw at entry instead of closing it to
   `aux_min_mm` (the original relied on an unchecked `set_pos` timeout), and every
@@ -911,15 +947,26 @@ Not yet established:
 
 ### Test suite
 
-The package test directory currently passes 137 tests. Repository-wide pytest
-also collects `hardware_bindings/imu/test_dual_imu.py`, which requires the
-separately built `imu_nanobind.abi3.so`; collection stops when that optional
-hardware extension is absent.
+**There is none. `tests/` was deleted on 2026-09-04 and nothing replaced it.**
+Read every claim in this file as a record of what was measured or reasoned at
+the time, not as something a run will catch if it stops being true. A clean
+import is not evidence.
 
-Counting tests measures nothing. Mutate the code and re-run. The recipe and the
-results table are in `MEMORY.md`, including the case where a test named for the
-exact bug could not see it, because its body contained a copy of the logic it was
-meant to be checking.
+What went with it is worth knowing before trusting a number here. The suite held
+the sim-versus-real direction and travel comparison, the dead-bus and 50 Hz
+timing checks, the per-row torque floor assertion, and the case where a servo
+dithering a single encoder count has to read as stopped. Several of those bugs
+are invisible on every backend: mujoco and `MockServo` both ignore the torque
+register, and neither quantises position, so a below-floor row or a one-tick
+velocity window looks correct in simulation and hangs on the bench.
+
+It is not recoverable from git. The pre-removal commits do not contain every
+failing case the suite caught, and the mutation recipes exist nowhere else.
+
+Counting tests measures nothing anyway. Mutate the code and re-run. The recipe
+and the results table are in `MEMORY.md`, including the case where a test named
+for the exact bug could not see it, because its body contained a copy of the
+logic it was meant to be checking.
 
 ## Known issues
 
@@ -951,12 +998,13 @@ find. Run on `hand_2`, it took six of seven carriages off their rails. **Measure
 with calipers and type the numbers in.** `counts_per_mm` is hand-wide, so one
 axis calibrates all seven, while travel is per-DOF and each rail needs its own.
 
-`tests/test_sim_real_contract.py` reads both sides live and asserts the recorded
-disagreement, so reconciling either one fails the test on purpose instead of
-going out of step quietly. The direction is not symmetric: **the sim narrows to
-the hardware, never the reverse.** `config` is narrower on all seven DOFs and
-must stay so, because the sim's extra stroke is not headroom, it is where a
-carriage leaves its slider.
+The disagreement was pinned by a comparator reading both sides live, so
+reconciling either one failed deliberately rather than drifting quietly. That
+file went with the rest of `tests/`, and the two sides can now diverge in
+silence. The direction is not symmetric: **the sim narrows to the hardware,
+never the reverse.** `config` is narrower on all seven DOFs and must stay so,
+because the sim's extra stroke is not headroom, it is where a carriage leaves
+its slider.
 
 **The action offset disagrees, and it is worse than travel.** Scale already
 agrees, since both sides move half the travel per unit of action. The offset does
