@@ -875,6 +875,8 @@ cartesian_hand/
   mjcf.py        model path and the DOF-to-joint map, split out of studio so
                  sim does not import a web server to find a qpos address
   servo.py       the serial bus, and MockServo for offline runs
+tests/           test_trace.py and its recorded traces.json. Plain asserts, no
+                 framework. All that is left of the suite; see Test suite
 hardware_bindings/  submodule: IMU, motor and servo bindings. Only ft_servo/ is
                     compiled here, and it is the sole copy of the servo driver.
 ```
@@ -947,10 +949,31 @@ Not yet established:
 
 ### Test suite
 
-**There is none. `tests/` was deleted on 2026-09-04 and nothing replaced it.**
-Read every claim in this file as a record of what was measured or reasoned at
-the time, not as something a run will catch if it stops being true. A clean
-import is not evidence.
+**The unit suite is gone. `tests/` was deleted on 2026-09-04.** Read every claim
+in this file as a record of what was measured or reasoned at the time, not as
+something a run will catch if it stops being true. A clean import is not
+evidence.
+
+What stands in its place is one golden-trace check:
+
+```bash
+python tests/test_trace.py            # check against the recorded traces
+python tests/test_trace.py --update   # re-record after an intended change
+```
+
+It runs all eight tasks against a toy plant in millimetres, with no bus and no
+mujoco, and hashes every goal *and every effort* they command. It pins
+behaviour, not the invariants the deleted tests reasoned about, but a change
+that alters what a task puts on the wire cannot pass it silently. Traces live in
+`tests/traces.json`; a run takes seconds.
+
+Its coverage is worth stating exactly. Mutating `VELOCITY_WINDOW_TICKS` back to
+a single tick, the dither bug below, fails all five policy tasks. So does
+dropping the `travel_effort` torque floor, and that one is the reason effort is
+in the digest at all: a goal-only digest passed that mutation, because no
+backend here models force. The toy plant has no friction, no following error and
+no encoder quantisation, so it still cannot see a stall that depends on how hard
+a joint pushes. Do not read a pass as evidence about grip.
 
 What went with it is worth knowing before trusting a number here. The suite held
 the sim-versus-real direction and travel comparison, the dead-bus and 50 Hz
