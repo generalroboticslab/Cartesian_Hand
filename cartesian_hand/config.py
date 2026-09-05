@@ -310,7 +310,8 @@ class HandConfig:
         return min(max(want, 0.0), self.travel_mm[dof_id])
 
     def travel_budget(self, dof_ids: Sequence[int], margin: float,
-                      distance_mm: float | None = None) -> float:
+                      distance_mm: float | None = None,
+                      speed_mm_s: float | None = None) -> float:
         """Seconds to allow a move of `dof_ids`. `distance_mm` defaults to the rail.
 
         Every deadline a task sets is seconds over millimetres and the `speed`
@@ -332,7 +333,12 @@ class HandConfig:
         only by a row that has already failed.
         """
         ids = list(dof_ids)
-        mm_per_s = self.gain_vector("speed")[ids].min().item() / self.counts_per_mm
+        # `speed_mm_s` is for a row that overrides the gain (`Step.set`'s own
+        # speed channel). Budgeting such a row off this table would time it out
+        # by whatever factor the two differ: the zero seek creeps at a fifth of
+        # the transit speed, so its budget has to be five times as long.
+        mm_per_s = (speed_mm_s if speed_mm_s else
+                    self.gain_vector("speed")[ids].min().item() / self.counts_per_mm)
         rail = max(self.travel_mm[d] for d in ids)
         return margin * (rail if distance_mm is None else distance_mm) / mm_per_s
 
@@ -425,11 +431,14 @@ class HandConfig:
 # absent here comes from the tables at the top of this file.
 
 HAND_1 = HandConfig(
-    name="hand_1", port="/dev/ttyACM0", first_servo_id=0,
+    name="hand_1", port="/dev/ttyACM0", 
+    # first_servo_id=0,
+    first_servo_id=14,
+
     # Never bisected on this unit -- older hand_2 values, carried over. hand_1
     # is the hand that recorded stops mid rail once, so these are the first
     # thing to measure if it does it again.
-    torque_min_to_move=(300, 300, 300, 800, 300, 300, 300),
+    torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
     torque_stuck=(400, 400, 400, 800, 400, 400, 400), # not used
 )
 
@@ -438,10 +447,19 @@ HAND_2 = HandConfig(
     # by-id, not /dev/ttyACM1: ACM numbers are handed out in plug order, so a
     # fixed number silently addresses whichever hand enumerated first.
     port="/dev/serial/by-id/usb-1a86_USB_Single_Serial_5AE6085950-if00",
+    # first_servo_id=7,
     first_servo_id=7,
+
     # Bisected on this unit.
-    torque_min_to_move=(300, 300, 300, 800, 300, 300, 300),
-    torque_stuck=(400, 400, 400, 800, 400, 400, 400), # not used
+    # torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
+    torque_min_to_move=(100, 100, 100, 400, 100, 100, 100),
+    torque_stuck=(400, 400, 400, 800, 300, 400, 400), # not used
+
+    # Transit speed, what the sliders and ordinary task rows run at. The zero
+    # seek does NOT use this any more: it asks for its own creep through
+    # `Step.set(speed_mm_s=)`, because a seek and a park want different speeds
+    # on the same joint and this table can only say one. See `zero.seek_speed`.
+    speed=(300, 300, 300, 500, 300, 300, 300),
 )
 
 HANDS = {h.name: h for h in (HAND_1, HAND_2)}

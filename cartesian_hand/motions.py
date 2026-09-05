@@ -16,9 +16,8 @@ Runtime  [N, J]     plus one step counter per env, [N]
 
 A **motion** is one cell: one joint, one goal, one torque, one stop rule.
 Motions on different joints at the same step run concurrently; motions on the
-same joint at different steps run in order. That ordering is what the cap task
-needs — the aux jaw must release before the fingers slide, and be back on the
-cap before they turn.
+same joint at different steps run in order. That ordering is what any fixed
+manipulation timeline needs when later rows depend on earlier positioning.
 
 Cells are the data, not the notation. A task authors a step by indexing joints
 and assigning a broadcast value — `Step.set` — the same way the tick reads them,
@@ -51,8 +50,7 @@ branch on motion type. One Python `if` here would make this a loop over N.
 
 The step barrier is global per env rather than one counter per joint. Per-joint
 counters would let a joint run ahead of the others, and the ordering above is
-exactly what must not be lost. Cost is no overlap between steps, which the cap
-task does not need.
+exactly what must not be lost. Cost is no overlap between steps.
 
 Contact is sensed as stall (velocity), not as load. The servos do report a load
 byte, but it reads zero at rest on every servo on both hands, so a decode that
@@ -165,6 +163,14 @@ class Motions:
         self.acts            = prog(torch.bool)     # joint acts at this step
         self.goal_mm         = prog(torch.float32)
         self.torque          = prog(torch.float32)
+        # Profile speed for this cell, mm/s. 0 means "the row has no opinion,
+        # use the caller's gain" -- a row that wants a speed always wants a
+        # positive one, so zero is free as the sentinel. This exists because a
+        # seek and a park want different speeds on the same joint: effort
+        # follows position error, so a setpoint sprinting away from a blocked
+        # carriage saturates whatever ceiling is in force, and the only way to
+        # keep contact force bounded is to keep the setpoint near the joint.
+        self.speed_mm_s      = prog(torch.float32)
         self.timeout_steps   = prog(torch.int32)
         # Which stop condition this cell arms, as the outcome code that means it
         # worked -- see `WANTS`. TIMEOUT, not zeros, so a cell nobody wrote
@@ -203,6 +209,7 @@ class Motions:
         self.steps_since_anchor = joint(torch.int32)
         self.held_goal          = joint(torch.float32)   # the standing orders
         self.held_torque        = joint(torch.float32)
+        self.held_speed_mm_s    = joint(torch.float32)   # 0: caller's gain
         # What a relative row's goal is added to: the position captured when
         # this step armed. Zero for absolute rows, so one add serves both and
         # the tick needs no branch on the frame.
@@ -303,7 +310,14 @@ class Motions:
         self.held_torque = torch.as_tensor(
             torque, dtype=torch.float32,
             device=self.device).expand_as(self.held_goal).clone()
-        self._arm(torch.ones_like(self.step, dtype=torch.bool), position_mm)
+        # Zeros, not a seed: an untouched joint has no speed opinion, and the
+        # caller's gain is the right default for one that is only holding still.
+        self.held_speed_mm_s = torch.zeros_like(self.held_goal)
+        # K=0 is a valid no-op program. TaskRunner skips it without spending a
+        # tick, but it still comes through start so its standing orders can be
+        # carried into whatever the task yields next.
+        if self.K:
+            self._arm(torch.ones_like(self.step, dtype=torch.bool), position_mm)
 
     def done(self) -> bool:
         return bool((self.step >= self.K).all())
@@ -335,8 +349,9 @@ class Motions:
 
     def step_once(self, position_mm: torch.Tensor,
                   external: torch.Tensor | None = None
-                  ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Advance every env by one tick. Returns (goal_mm, torque), both [N, J].
+                  ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Advance every env by one tick. Returns (goal_mm, torque, speed_mm_s),
+        all [N, J]. Speed is 0 where the row asked for none.
 
         `position_mm` is [N, J] and is treated as READ-ONLY. `external`, when
         supplied, is exactly [N,J] bool: an explicit backend-owned signal for
@@ -359,6 +374,7 @@ class Motions:
         # absolute ones, so this one add covers both frames with no branch.
         goal   = self._at(self.goal_mm, idx) + self.goal_base
         torque = self._at(self.torque, idx)
+        speed  = self._at(self.speed_mm_s, idx)
         live   = ~self.retired & self.active_step & (self.step < self.K)[:, None]
         live_i = live.to(torch.int32)                # torch refuses bool arithmetic
 
@@ -381,12 +397,18 @@ class Motions:
         w_goal    = (wants == GOAL)     & at_goal
         w_stuck   = (wants == STUCK)    & stuck
         w_external = (wants == EXTERNAL) & external
-        stop = live & (w_goal | w_stuck | w_external | expired)
+        # A contact-seeking row that reaches its goal has conclusively closed on
+        # air. Retire it now as GOAL -- an unsuccessful outcome for a row that
+        # wanted STUCK -- instead of leaving it with no possible condition and
+        # burning its entire timeout. It must not be labelled STUCK: that would
+        # turn a fully closed empty jaw into an object measurement.
+        closed_on_air = (wants == STUCK) & at_goal
+        stop = live & (w_goal | w_stuck | w_external | closed_on_air | expired)
 
         # Requested conditions beat TIMEOUT on the final tick. Timeout last is
         # load-bearing: a signal that arrives on its deadline is success.
         keep = self.outcome.gather(2, idx).squeeze(-1)
-        code = torch.where(stop & w_goal,     GOAL,
+        code = torch.where(stop & (w_goal | closed_on_air), GOAL,
                torch.where(stop & w_stuck,    STUCK,
                torch.where(stop & w_external, EXTERNAL,
                torch.where(stop,              TIMEOUT, keep))))
@@ -414,16 +436,22 @@ class Motions:
         # started, if it has never acted). See the module docstring.
         # `live` includes joints that are merely waiting; only joints with a
         # Move at this step should update their standing orders.
-        active_step = self.active_step                                # [N, J]
-        self.held_goal   = torch.where(active_step, goal, self.held_goal)
-        self.held_torque = torch.where(active_step, torque, self.held_torque)
+        # `active_step` can describe a row another environment is still
+        # running. `live` also includes this environment's `step < K`, so a
+        # finished batch row cannot rewrite a relative goal a second time while
+        # waiting at the global program barrier.
+        self.held_goal   = torch.where(live, goal, self.held_goal)
+        self.held_torque = torch.where(live, torque, self.held_torque)
+        self.held_speed_mm_s = torch.where(live, speed, self.held_speed_mm_s)
 
         # Barrier: advance when every joint has finished its row. `& step < K`
         # stops finished envs from running the counter past the program.
         advance   = self.retired.all(dim=1) & (self.step < self.K)
         self.step = self.step + advance.to(torch.int64)
-        self._arm(advance, pos)
-        return self.held_goal, self.held_torque
+        more = advance & (self.step < self.K)
+        self._arm(more, pos)
+        self.active_step.masked_fill_((advance & ~more)[:, None], False)
+        return self.held_goal, self.held_torque, self.held_speed_mm_s
 
 
 class Step:
@@ -451,6 +479,7 @@ class Step:
         self.acts            = joint(torch.bool)
         self.goal_mm         = joint(torch.float32)
         self.torque          = joint(torch.float32)
+        self.speed_mm_s      = joint(torch.float32)   # 0: caller's gain
         self.timeout_steps   = joint(torch.int32)
         self.wants           = torch.full((n_envs, n_joints), TIMEOUT,
                                           dtype=torch.int8, device=device)
@@ -461,7 +490,8 @@ class Step:
 
     def set(self, dofs: int | Sequence[int], goal: Broadcast,
             torque: Broadcast, stop: str = "goal", timeout_s: float = 6.0,
-            when: torch.Tensor | When | None = None, frame: str = "abs") -> "Step":
+            when: torch.Tensor | When | None = None, frame: str = "abs",
+            speed_mm_s: Broadcast = 0.0) -> "Step":
         """Give one order to a group of joints. Returns self, so sets chain.
 
         `dofs` is a joint index or a sequence of them. `goal` and `torque`
@@ -503,6 +533,7 @@ class Step:
         n = len(ids)
         self.goal_mm[:, ids] = self._spread(goal, n, "goal")
         self.torque[:, ids] = self._spread(torque, n, "torque")
+        self.speed_mm_s[:, ids] = self._spread(speed_mm_s, n, "speed_mm_s")
         self.wants[:, ids] = WANTS[stop]
         self.relative[:, ids] = (frame == "here")
         self.timeout_steps[:, ids] = (
@@ -586,6 +617,7 @@ class Program:
         m.acts            = stack(lambda s: s.acts)
         m.goal_mm         = stack(lambda s: s.goal_mm)
         m.torque          = stack(lambda s: s.torque)
+        m.speed_mm_s      = stack(lambda s: s.speed_mm_s)
         m.timeout_steps   = stack(lambda s: s.timeout_steps)
         m.wants              = stack(lambda s: s.wants)
         m.relative           = stack(lambda s: s.relative)
@@ -627,12 +659,11 @@ Task = Generator[Motions, torch.Tensor, Result]
 class TaskRunner:
     """Drives a task to completion, one program at a time.
 
-    A task is not one program. Zeroing seeks a hard stop and only *then* knows
-    where mid travel is; the cap task probes the cap and only then knows how
-    many strokes to emit. Both are "a program, some Python, another program",
-    and the Python has to run between programs rather than inside a tick --
-    otherwise the shape of a program would depend on a measurement, which is
-    the one thing that stops it being batched.
+    A legacy task is not necessarily one program. Zeroing seeks a hard stop and
+    only *then* knows where mid travel is. Such tasks are "a program, some
+    Python, another program", and the Python runs between programs rather than
+    inside a tick. Feedback-heavy manipulation instead uses `PolicyRunner`, so
+    phase and measurements remain tensor state inside the control loop.
 
     A generator is exactly that shape, so a task is one:
 
@@ -656,13 +687,15 @@ class TaskRunner:
     """
 
     def __init__(self, task: Task, hold_torque: Broadcast) -> None:
-        """`hold_torque` seeds joints the current program never mentions.
+        """`hold_torque` seeds joints the task's first program never mentions.
 
         It cannot default to zero: `Motions.start` copies this into
         `held_torque` for every joint, and a joint the program does not touch
         would be commanded limp rather than told to stay where it is. The
         hand's own configured torque is the right seed, and only the caller
-        knows it.
+        knows it. Later programs inherit the preceding program's standing
+        orders, because a yield is a measurement boundary inside one task, not
+        a release of joints that program happened not to mention.
         """
         self.task = task
         self.hold_torque = hold_torque
@@ -670,7 +703,7 @@ class TaskRunner:
         self.result: Result | None = None
         self.finished = False
         # Every program the task issued, not just the one being driven. A task is
-        # several (`zero` is six, `cap` is three) and the last one alone cannot
+        # several (`zero` is six) and the last one alone cannot
         # explain a run: `zero`'s `Result.ok` reports on its seeks and says
         # nothing about its parks. Kept so `slow_rows` can name the row that
         # spent the time after the fact -- the engine has no other trace, which
@@ -704,10 +737,10 @@ class TaskRunner:
         rewrite dropped it, which is how `cap`'s probe could fail to detect
         contact on every stroke and show up only as the hand standing still.
 
-        A row that misses its condition still ends tidily, on its deadline. So
-        the wall-clock cost of a failure is exactly its budget, and a budget is
-        the one number here that is chosen rather than measured: if the reported
-        seconds equal the budget, the row did not stop -- it was stopped.
+        A row that misses its condition still ends tidily: immediately when a
+        contact seek reaches its goal on air, otherwise on its deadline. A
+        timeout's wall-clock cost is exactly its budget, and a budget is the one
+        number here that is chosen rather than measured.
 
         `env` because this is for a person reading a bench log, where N is 1.
         """
@@ -729,15 +762,16 @@ class TaskRunner:
                     why = ""
                     if int(program.wants[env, j, k]) == STUCK:
                         if abs(at - goal) <= program.position_tolerance_mm:
-                            why = ("  <- closed onto its goal; STUCK cannot fire "
-                                   "at_goal, so nothing could ever end this row")
+                            why = ("  <- closed onto its goal without contact; "
+                                   "retired immediately as a failed probe")
                         elif speed >= program.stuck_speed_mm_s:
                             why = (f"  <- still reading {speed:.2f} mm/s of motion "
                                    f"at the {program.stuck_speed_mm_s} threshold: "
                                    f"contact was made but never looked stopped")
                     out.append(
                         f"program {p} step {k} {labels[j]}: wanted {want}, got "
-                        f"{got} after {int(program.timeout_steps[env, j, k]) / program.hz:.1f}s"
+                        f"{got} with "
+                        f"{int(program.timeout_steps[env, j, k]) / program.hz:.1f}s budget"
                         f" at torque {float(program.torque[env, j, k]):.0f}"
                         f"; ended {at:.2f}mm (goal {goal:.2f}) moving "
                         f"{speed:.2f}mm/s{why}")
@@ -749,8 +783,10 @@ class TaskRunner:
         The measurement sent back is the position at this instant, which is
         where the program that just finished left the joints -- for a
         `stop="stuck"` row that is the contact, i.e. the measurement the task
-        asked for.
+        asked for. Its standing orders seed the next program, so yielding a
+        measurement does not release a grip.
         """
+        previous = self.program
         try:
             program = (next(self.task) if self.program is None
                        else self.task.send(position_mm))
@@ -758,5 +794,13 @@ class TaskRunner:
             self.result, self.finished = end.value, True
             return
         program.start(position_mm, self.hold_torque)
+        # A yielded program is another phase of the same task, not a new owner
+        # of the hand. Preserve every standing command exactly as the old
+        # partial set_pos API did; the new program overwrites only joints that
+        # act in its current step. Without this, cap silently releases the base
+        # jaw between its stroke and extraction programs.
+        if previous is not None:
+            program.held_goal.copy_(previous.held_goal)
+            program.held_torque.copy_(previous.held_torque)
         self.program = program
         self.issued.append(program)

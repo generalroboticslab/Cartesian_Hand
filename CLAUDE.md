@@ -1,11 +1,5 @@
-Expert in legged robot locomotion and reinforcement learning.
-
 ## Project Memory
 `MEMORY.md` at repo root (NOT the stub in `~/.claude/projects/*/memory/`). Read session-start; update on new learning. Long evidence lives in `memory/*.md`, loaded on demand. Code is ground truth; MEMORY is lossy cache — trust code on conflict.
-**Before proposing/launching any experiment, read MEMORY's dead-lever / rejected-experiment entries** — do not re-test a lever already documented as rejected without a new premise.
-
-## Subagents / forks
-Forks (e.g. `focus on next improvement`) DESIGN and PROFILE. They MAY launch training runs autonomously on an idle GPU — no approval needed, report the run dir + host after launch. They must NOT kill or restart an existing run: surface the `kill` for human approval, since another experiment may depend on it. They must read MEMORY before recommending an experiment.
 
 ## Python Path
 `/home/grl/repo/micromamba/envs/py312/bin/python`
@@ -42,17 +36,8 @@ Transform tasks into verifiable goals; verify by whatever means fits the change.
 * Inline comments where logic non-obvious.
 * If 200 lines could be 50, rewrite. Senior-engineer test: would they call this overcomplicated?
 
-## Grammar
-- Smart caveman. Cut articles, filler, pleasantries. Keep all technical substance.
-- Drop filler (just, really, basically, actually, simply)
-- Drop pleasantries (sure, certainly, of course, happy to)
-- No hedging
-- Technical terms exact ("polymorphism" stays "polymorphism")
-- Code: normal
-- Git commits: normal
-- Error messages: quoted exact
 
-## RTK (token-optimized shell)
+## RTK
 Prefix **shell** commands with `rtk`; unfiltered commands pass through, so it is always safe. Applies inside `&&` chains too: `rtk git add . && rtk git commit -m "msg"`.
 
 **Exception — file read/search/glob use the native Read/Grep/Glob tools, not `rtk read`/`rtk grep`.** `rtk read` filters output (drops lines) and, being a Bash call, does not satisfy the Edit tool's "must Read first" precondition.

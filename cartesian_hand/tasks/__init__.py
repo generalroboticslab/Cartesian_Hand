@@ -1,10 +1,8 @@
-"""Tasks: generators that submit motion programs to whatever hand is executing.
+"""Task discovery: one file name builds one controller for any executor.
 
-A task never opens a bus, never sleeps, and never steps a simulator. It yields
-`Motions` programs and receives back the millimetres measured when each one
-finished (see `motions.TaskRunner`). That is the whole interface, and it is why
-the same task file runs on hardware under `studio.live` and on mujoco under
-`sim.run` with nothing swapped out.
+A task never opens a bus, sleeps, or steps a simulator. Feedback-heavy tasks
+return a typed `Policy`; fixed timelines and pre-calibration zeroing return a
+`motions.Task` generator. Executors accept both controller forms by design.
 
 The whole dispatch, in one sentence
 -----------------------------------
@@ -14,19 +12,14 @@ stem is the name because it *is* the import.
 
 A task module supplies exactly two names:
 
-    build(hand, start_mm, cfg=None, **kwargs)   required -- returns the generator
+    build(hand, start_mm, cfg=None, **kwargs)   required -- returns its controller
     Config                                      optional -- dataclass of defaults
 
-`build` is the whole procedure: one generator, no helper split out of it. Three
-`_program` builders called once each from a fourth function is four names for
-one procedure, and the phase boundaries are already visible as the `yield`s.
-
-It returns a `motions.Result`: the measurement, plus `[N]` flags saying which
-envs that measurement is valid for. A task does not raise on a failure it can
-attribute to particular envs -- `start_mm` is `[N, J]` and the envs are
-independent, so an exception would let one of 4096 discard the rest. Deciding
-what a failure *means* is the caller's: `sim.run` raises, `studio.finish`
-declines to save, a batched trainer masks.
+`build` constructs the controller at the requested batch width and device.
+Direct policies keep phase and results in typed tensor state. Program generators
+return `motions.Result`; they remain the smaller representation for fixed
+timelines and for zeroing, whose uncalibrated overtravel cannot be clamped like
+a normal direct action.
 
 `Config` is everything else, including what the dispatch here reads:
 
@@ -61,9 +54,8 @@ into the variant's own namespace, where `config()` below finds it and hands back
 cap's label -- so the variant would inherit a button it never asked for. Reaching
 through the module is what keeps opt-in working.
 
-The module docstring is the bench log, and it has to be: `plan/` is not
-committed and neither is `MEMORY.md`, so a result that is not in a docstring is
-not anywhere.
+The module docstring is the bench log: a result kept only in working notes is
+not versioned beside the task variant it describes.
 """
 import dataclasses
 import importlib
@@ -75,6 +67,9 @@ import torch
 
 from ..config import HandConfig
 from ..motions import Task
+from ..policy import Policy
+
+Controller = Task | Policy
 
 
 def names() -> list[str]:
@@ -93,13 +88,13 @@ def module(name: str) -> ModuleType:
     return importlib.import_module(f".{name}", __package__)
 
 
-def make(name: str, hand: HandConfig, start_mm: torch.Tensor, **kwargs) -> Task:
-    """The generator for task `name`.
+def make(name: str, hand: HandConfig, start_mm: torch.Tensor,
+         **kwargs) -> Controller:
+    """Build task `name` for this hand, batch width, and tensor device.
 
     `start_mm` is [N, J], where the joints are now. It is an argument rather
-    than something the task reads because a task has no way to read anything --
-    that is what makes it run on both backends. `kwargs` is per-task extra
-    (`cap_radius`); a task ignores what it does not use.
+    than something the task reads because task code owns no backend. `kwargs`
+    is reserved for task-specific construction values.
     """
     return module(name).build(hand, start_mm, **kwargs)
 
@@ -128,9 +123,7 @@ def tunables(name: str) -> dict[str, tuple[float, float, float]]:
     is the one nobody reads.
 
     Opt-in, not opt-out, but the bar is low: `label` and `sets_datum` are out
-    because they are not numbers, and `cap.max_cap_radius` is out because it is
-    the one field that changes `K` -- two configurations whose programs are
-    different lengths are not comparable.
+    because they are not numbers.
 
     **A declared bound is not a claim that the number is measurable.** These are
     ranges a human may drag with the hand in front of them. An automatic tuner

@@ -1,65 +1,782 @@
 # Cartesian Hand
 
 Control stack for a 7-DOF Cartesian gripper driven by Feetech HLS-series serial
-servos. Two grippers (a base pair and an auxiliary pair) share a vertical stage,
-so the hand can hold one object while turning another. Unscrewing a bottle cap
-is the task it was built around.
+servos. Two grippers, a base pair and an auxiliary pair, share a vertical stage,
+so the hand can hold one object while turning another. Unscrewing a bottle cap is
+the task it was built around.
 
-The stack does three things: it converts servo counts to millimetres against a
-measured zero, it runs a fixed-rate position loop over the serial bus, and it
-gives a policy trained in a digital twin a defined way to drive the real hand.
+A controller opens no serial port, never sleeps, and steps no simulator. It sees
+typed observations in millimetres and returns commands; the executor alone owns
+I/O and pacing. There are currently two controller forms:
+
+- `Policy.step` is the target for closed-loop manipulation. It runs every tick,
+  keeps tensor state, composes reusable primitives, and is batch-friendly.
+- `Motions`/`TaskRunner` executes fixed `[N,J,K]` programs. It remains useful for
+  zeroing, GUI-authored timelines, and existing task files.
+
+```text
+tasks.make(name) ─┬─ Policy ─ PolicyRunner ─┬─ studio.live   servos + viser
+                  └─ Task ─── TaskRunner ───┼─ sim.run       CPU MuJoCo
+                                            └─ sim.run_warp  batched GPU MuJoCo
+```
 
 ## Install
 
 ```bash
 git submodule update --init --recursive
 pip install -e .
+pip install torch mujoco viser        # not yet declared in pyproject
 ```
 
-That builds the nanobind extension (`ft_servo_ext`) around the C++ driver in
-the `hardware_bindings` submodule, so the submodule init is not optional. You
-need CMake 3.15+ and a C++17 compiler. Python dependencies are numpy and tyro.
+The build compiles the nanobind extension (`ft_servo_ext`) around the C++ driver
+in the `hardware_bindings` submodule, so the submodule init is not optional. You
+need CMake 3.15+ and a C++17 compiler.
 
-If you only want to read the code or develop a policy, you can skip the build
-entirely and use the mock backend described below.
+To read the code, write a task, or run everything in simulation, skip the build.
+`servo.open_driver` imports the extension inside the call rather than at module
+scope, so nothing in this package touches hardware when you import it.
+
+> `pyproject.toml` is out of date. It declares only `numpy` and `tyro`, and its
+> `[project.scripts]` entry points at `cartesian_hand.__main__:main`, which no
+> longer exists. Use the module entry points below.
 
 ## Quick start
 
 ```bash
-python -m cartesian_hand list                    # hands and tasks
-python -m cartesian_hand scan --end-id 20        # what is on the bus
-python -m cartesian_hand zeroing                 # find the hard stops, save offsets
-python -m cartesian_hand travel                  # measure full travel between stops
-python -m cartesian_hand demo                    # sweep the full travel
-python -m cartesian_hand publish --hz 2          # watch DOF state
-python -m cartesian_hand set-id 7                # rename the one servo on the bus
+# hardware
+python -m cartesian_hand.studio                          # browser page at :8081
+python -m cartesian_hand.studio --hand hand_1            # skip the ID probe
+python -m cartesian_hand.studio --task zero              # zero it, headless
+python -m cartesian_hand.studio --mock --seconds 5       # no hardware attached
+python -m cartesian_hand.studio --teach                  # limp, pose it by hand
+
+# simulation, same task files (object-free tasks only for now)
+python -m cartesian_hand.sim --task zero
+python -m cartesian_hand.sim --task zero --n-envs 4096 --warp   # GPU, batched
+
+# offline checks
+python tests/test_tasks.py                 # toy hand, no bus, no MuJoCo
 ```
 
-Every command takes `--hand` to pick a hand, `--port` to override its serial
-port for one run, and `--mock` to run against a simulated bus with no hardware
-attached. `--help` on any subcommand lists its flags.
+Every entry point is [tyro](https://brentyi.github.io/tyro/) over a function
+signature, so `--help` lists the real flags. A tri-state `bool | None` renders as
+`--studio {None,True,False}` rather than `--no-studio`.
 
-Zeroing has to run before anything else. Until offsets exist, millimetres have
-no meaning and motion commands are refused.
+**Zero the hand before trusting a millimetre.** Without a calibration, zero is
+the *startup pose*. The travel clamp still applies, but relative to wherever the
+hand happened to be, so starting mid-travel and driving a full stroke can still
+run a carriage off its rail.
+
+## The seven DOFs
+
+Two grippers share one vertical stage. Each gripper is a parallel jaw plus two
+independent finger slides, and the stage carries the auxiliary gripper up and
+down. Every DOF is linear and commanded in millimetres from the hard stop that
+zeroing finds. There are no rotary joints in the controller's view; the rack
+converts turns to travel.
+
+| DOF | Role | Axis | Orient | What it does | Servo `hand_1` / `hand_2` |
+|----:|------|:----:|:------:|--------------|:-------------------------:|
+| 0 | `BASE_JAW` | y | −1 | base parallel actuation | 0 / 7 |
+| 1 | `BASE_LEFT` | x | −1 | base left finger | 1 / 8 |
+| 2 | `BASE_RIGHT` | x | −1 | base right finger | 2 / 9 |
+| 3 | `Z` | z | −1 | vertical translation | 3 / 10 |
+| 4 | `AUX_JAW` | y | −1 | aux parallel actuation | 4 / 11 |
+| 5 | `AUX_LEFT` | x | −1 | aux left finger | 5 / 12 |
+| 6 | `AUX_RIGHT` | x | −1 | aux right finger | 6 / 13 |
+
+Names and groups (`BASE_FINGERS`, `AUX_FINGERS`) sit in `config.py` directly
+below `LAYOUT`. Putting them in their own file would let the two disagree, and a
+role map that disagrees with the layout is a mirrored gripper that still looks
+plausible.
+
+Three things the table hides:
+
+**DOF index is not servo ID.** The index is how the controller addresses a DOF
+and is the same on every hand. The servo ID is what answers on the serial bus and
+differs per hand. Everything above the driver is in DOF index order.
+
+**`orientation` is which way the servo counts.** `+1` means rising counts are
+rising millimetres. The current hand wiring has all seven at `-1`; this is a
+bench fact, not a convention inferred from left/right labels.
+
+> **`orientation` cannot fix a sim/real direction disagreement.** It cancels
+> between `mm_to_counts` and `counts_to_mm`, so the millimetre the model renders
+> does not change when you flip it. Flipping a sign moves only the hardware, and
+> turns "the sim disagrees" into "the hardware is backwards". This was confirmed
+> on the bench on 2026-09-01, at the cost of a session: flipping all seven to
+> `+1` reversed five DOFs on the real hand and left the model where it was.
+
+**The ordering is authoritative for the simulation.** DOF order here is the order
+the twin's actuators must be in, not the other way round. `LAYOUT`'s axis
+sequence y,x,x,z,y,x,x matches the MJCF actuator order one for one, and
+`tests/test_studio.py` walks `model.actuator_trnid` to assert it rather than
+trusting the comment.
+
+## Writing a task
+
+A task module's `build()` returns a controller. Object manipulation returns a
+`primitives.Sequence` — a typed `Policy` whose step machine is declared as a list
+of rows (`Move`, `Probe`, `Hold`, `Twist`, `Loop`); fixed timelines and
+pre-calibration zeroing return a `Task` generator of `Motions` programs. Both
+keep hardware out of task code and are selected by the same task name. There is
+no per-task `*Policy` class anymore: the row table *is* the policy.
+
+A row's `measure={"radius": AUX_JAW}` records what an earlier probe measured
+into `SequenceState.measured`, and any later row that needs it names it as
+`lambda m: m.radius`. `twist_stroke` still owns its own probe+reset+turn
+sequence; that has not changed. Use a generator when the procedure is already a
+fixed row schedule whose outcomes do not feed later rows. In that form, each
+`yield` evaluates to the `[N, J]` millimetres measured when the program finished:
+
+```python
+def build(cfg, start_mm, **kwargs):          # tasks/zero.py, the whole module
+    here, stops = start_mm, start_mm.clone()
+    alive = torch.ones(len(start_mm), dtype=torch.bool)
+    for dof_ids, name in PHASES:
+        seek = program({d: Move(here[..., d] - OVERTRAVEL_MM, creep[d],
+                                "stuck", SEEK_TIMEOUT_S) for d in dof_ids})
+        here = yield seek
+        alive &= seek.succeeded()[:, dof_ids, 0].all(dim=1)
+        stops[:, dof_ids] = here[:, dof_ids]
+        mid = here[:, dof_ids] + travel[dof_ids] / 2   # per DOF, from the stop
+        here = yield program({d: Move(where(alive, mid, here)[..., d], PARK_TORQUE,
+                                      "goal", PARK_TIMEOUT_S) for d in dof_ids})
+    return Result(stops, alive)
+```
+
+For a generator task, `build` is the whole procedure rather than a wrapper
+around one. Its phases are `yield`s, so splitting them into
+`probe_program` / `stroke_program` / `extract_program` called once each from a
+fourth function is four names for one procedure and one more place for the
+phase order to disagree with itself.
+
+That return value from `yield` is how a measurement gets back into the task, and
+no other mechanism was needed for it. The task's `return` arrives as
+`StopIteration.value` and ends up in `TaskRunner.result`.
+
+**A task reports failure, it does not raise it.** `Result.ok` is `[N]` — one flag
+per env — because `start_mm` is `[N, J]` and the envs are independent. Reducing
+the outcome with a bare `.all()` and raising would let one env out of 4096
+discard the 4095 that succeeded, and the exception would unwind the generator so
+they could not even be recovered from it. Under domain randomisation some envs
+are *supposed* to fail; that is data.
+
+What a failure *means* is the caller's to decide: `sim.run` raises,
+`studio.finish` declines to save the calibration, a batched trainer masks the bad
+rows. The task's own job is only to keep every goal it derives from a failed
+measurement bounded — in zeroing that is exactly one move, the park in
+`tasks/zero.py`, which parks a failed env in place rather than at `mid-rail + travel/2`, since the
+far end of the rail is open and that is where a carriage leaves its slider.
+
+**Inside a fixed `Motions` program, a measurement can set a value but cannot set
+the number of steps.** The Python
+loop that emits N strokes runs once, when the program is built. By the time the
+program starts ticking, its length is fixed. Environments needing fewer strokes
+carry `when=False` on the extra rows and idle through them. That is how
+`for i in range(ceil(measurement))` can only be approximated with a fixed upper
+bound and masks. This compromise is why feedback-heavy tasks such as `cap` use
+direct tensor state instead.
+
+### How a name reaches a file
+
+`--task zero` imports `tasks/zero.py` and calls its `build()`. There is no
+registry and nothing registers itself at import time. The file stem is the name
+because it *is* the import. A task module supplies exactly two names:
+
+```python
+build(hand, start_mm, cfg=None, **kwargs)   # required; returns Policy or Task
+Config                                      # optional, dataclass of defaults
+```
+
+`build` is the procedure. `Config` is everything else, including the two fields
+the dispatch reads:
+
+```python
+@dataclass
+class Config:
+    label: str = "Zero hand"    # puts a button on the page; "" means none
+    sets_datum: bool = True     # its result becomes the hand's zero
+    overtravel_mm: float = 120.0
+    ...
+```
+
+Fields rather than `LABEL` / `SETS_DATUM` module constants, so a task is one
+configuration object instead of a dataclass plus a scatter of `UPPER_CASE` beside
+it. `tasks.buttons()` reads them off `Config()`; building one runs no program, so
+the page lays itself out before any task exists.
+
+A variant is a new file next to the one it varies, reaching what it reuses
+through the module:
+
+```python
+# tasks/cap_gentle.py
+"""Squeeze 80 -> 40: hand_2 crushed a PET cap on stroke 2 at 80."""
+from . import cap
+
+def build(hand, start_mm, **kwargs):
+    return cap.build(hand, start_mm, cfg=cap.Config(squeeze_torque=40.0), **kwargs)
+```
+
+That file is reachable as `--task cap_gentle` straight away, and every name in it
+is a real import an editor can jump to. `Config` is a dataclass, so its
+constructor is the configuration. There is no `configure()` hook to learn, and
+`dataclasses.replace` composes one variant onto another.
+
+**`from . import cap`, not `from .cap import Config`.** The second binds `Config`
+into the variant's own namespace, which is exactly where `tasks.config()` looks —
+so the variant would answer with cap's `label` and put a second "Open cap" on the
+panel. Reaching through the module is what keeps the button opt-in, and giving
+every variant a button would fill the panel with them.
+
+Module docstrings are the bench log, and they have to be. A result kept only in
+working notes is not versioned beside the task variant it describes.
+
+### The engine
+
+`motions.py` holds a robot protocol written as tensors and advanced one tick at a
+time.
+
+```
+Program  [N, J, K]   written once by Program.build, read-only during a run
+Runtime  [N, J]      plus one step counter per env, [N]
+
+    N  environments in sim, or physical hands on real
+    J  joints
+    K  steps in the program
+```
+
+A **motion** is one cell: one joint, one goal, one torque, one stop rule. Motions
+on different joints at the same step run together. Motions on the same joint at
+different steps run in order. That ordering is what the cap task needs, because
+the aux jaw must release before the fingers slide, and be back on the cap before
+they turn.
+
+`Move(goal, torque, stop, timeout_s, when)` has three stop rules. `"goal"`
+retires on arrival, `"stuck"` retires on contact, and `"hold"` retires
+immediately after leaving a command in place.
+
+**A joint that has finished its move keeps commanding what it last asked for.**
+`step_once` returns a goal and torque for every joint, not only for the ones
+still running, and the engine calls the value it keeps sending a *standing
+order*. This is what makes a grip work. A probe commands the jaw past the object
+at reduced torque and lets the object stop it, so the pressure only stays on
+because the finished joint goes on commanding that same goal. Resetting a
+finished joint's goal to its measured position would release every grip the
+moment it was made.
+
+Contact is sensed as **stall**, not as load. The servos do report a load byte,
+but it reads zero at rest on every servo on both hands, so a working decode and a
+decode returning padding look identical today. Load is also backwards from
+intuition: it is drive effort, highest during free motion and near zero at rest,
+so a high `load` column on the page does not mean contact.
+
+Deadlines are counted in ticks, not wall-clock seconds. Sim has no wall clock and
+does not run at real time, so a tick is the only unit that means the same thing
+on both backends.
+
+**Every torque a task commands on a horizontal DOF is floored at that hand's
+`torque_min_to_move`.** Below its own floor a joint does not move at all, so the
+row can neither arrive nor stall anywhere but where it started, and the only way
+left for it to end is its deadline — the hand standing still between motions,
+waiting each timeout out in turn. `tilt` shipped with 50 and 80 against hand_2's
+floor of 100 at budgets of about 20 s a row, and `scissors` closed its contact
+probe at 150 against hand_1's 250. The floor applies to a probe as much as to
+free travel: a contact seek wants the *lightest* push that still travels, and
+below this it is not a light push, it is no push. z is excluded — its floor is
+gravity rather than friction, and a descent deliberately commands less (see
+`cap`'s split between descent and lift). Asserted per row on the issued programs
+by `test_no_program_row_is_commanded_below_its_own_torque_floor`, because
+mujoco, `MockServo` and the toy hand all ignore the torque register, so on every
+backend this looks correct and merely slow.
+
+### Primitives
+
+`primitives.py` serves both controller forms. The legacy helpers `twist`, `tilt`,
+`rotate_in_place`, and `move_until_stuck` fill a `Step`; they exist where joint
+pairing or calibrated gains would otherwise be re-derived incorrectly. A helper
+that only renames `Step.set` does not belong there.
+
+The direct functions are closed-loop behaviors:
+
+- `hold` changes named DOFs and preserves every other standing command;
+- `move_to` owns convergence and a tick deadline;
+- `close_until_contact` distinguishes contact, timeout, and reaching a closed
+  goal with no object;
+- `twist_stroke` owns release, finger reset, re-grip, and one twist;
+- `strokes_for_revolutions` turns a measured radius into a per-environment
+  stroke count, and `joint_mask` names a static mechanism group.
+
+`twist_stroke` takes two optional per-environment arguments, because four tasks
+need the same stroke and only differ in these:
+
+- **`reverse` (`[N]` bool)** exchanges which finger opens the gap and which
+  closes it, which is what runs the stroke the other way round. `bulb` unscrews
+  and re-threads in a *single* task, so direction has to live in tensor state
+  rather than at the call site.
+- **`press` (`TwistPress`)** drives a third axis to depth after the re-grip,
+  holds it through the turn, and backs off before the next release -- a bulb
+  going into its socket and a screw being driven in engage by depth as well as
+  rotation. Its `return_effort` is separate from `effort` because backing off
+  *raises* the stage and z torque is directional.
+
+An environment that configures no press skips both z phases on the transition
+itself rather than idling a tick in each, so a stroke without a press issues
+exactly the actions it did before the parameter existed.
+
+The closed-loop primitives accept an `[N]` active mask and return an `Action`,
+typed state, and a `PrimitiveResult`; `hold` is the smaller action-update helper.
+Results publish `succeeded`, `timed_out`,
+`reached_goal_without_contact`, `stopped_at_mm`, and validity tensors.
+Information passes between rows via `SequenceState.measured` -- a row that needs
+it reads it as `lambda m: m.radius`. Primitives do not inspect or mutate one
+another's private state.
+
+This explicit result-to-state-to-input path is how closed-loop primitives
+exchange information without dictionaries, numbered registers, host-side
+branches, or backend objects.
+
+**Toward the stop is negative on every DOF, with no `orientation` term.** The
+seek commands `here - overtravel` in millimetres, and `counts_to_mm` has already
+applied `orientation` on the way in. A seek written in raw counts has to say
+`here - orientation * overtravel`, and that sign comes out wrong about half the
+time someone works it out again. It did, twice. Working in millimetres removes
+the mistake instead of correcting it. The cost is that `tests/test_tasks.py`
+asserts the resulting stall **in counts** per DOF, because the failure is
+invisible in millimetres.
+
+## Direct policies
+
+`policy.py` defines the backend-neutral contract. `Observation` contains
+`position_mm`, `velocity_mm_s`, `contact`, and `elapsed_ticks`; `Action` contains
+`goal_mm`, `max_speed_mm_s`, and normalized `effort_limit`. Every field is a
+tensor with a leading environment dimension. Hardware is ordinary `N=1`, not a
+different API.
+
+Policy state and parameters are typed dataclasses with tensor leaves and fixed
+primitive-state fields. An optimizer may own a packed `theta[N,P]`, but it
+converts that once to a task-specific dataclass such as `CapParameters`; policy
+and primitive code never indexes a parameter by string. Measurements may change
+values, masks, phases, and tensor counters, but never a Python loop bound or
+tensor shape.
+
+Six manipulation tasks are on this path, all transcribed from the implementation
+in `cartesian_hand_old_validated_real/tasks/`, which ran on real objects:
+
+| task | from | what makes it its own file |
+|---|---|---|
+| `cap` | `caps_contact_based.py` | the canonical one; probe, twist, extract, present |
+| `bulb` | `light_bulb.py` | two grips at *different* torques (socket hard, glass soft), and it re-threads the bulb with a mirrored stroke plus a z press |
+| `screwdriver` | `manual_screw_driver.py` | both jaws hold **one** tool; the base jaw is taut-contact only and never squeezed. `cw` selects `reverse` + press |
+| `pipette` | `pipetting.py` | longest sequence; a twist-lock knob, then plunge and draw as one shared push-to-stall stroke |
+| `syringe` | `syringe.py` | no twist at all -- the repeating DOF is **z**, and the jaw re-grips the plunger higher each stroke |
+| `scissors` | `scissor_type.py` | no twist either; z travel *is* the tool's pivot. Both jaws stay squeezed at the end |
+
+`zero` deliberately stays a `Motions` generator: its uncalibrated negative
+overtravel must not pass the direct-action clamp that `studio.live` applies to
+every policy goal. `tilt` stays one too -- nothing in it is parameterised by a
+measurement.
+
+All five ports are transcriptions, not bench results. The sequences are
+validated; these implementations of them have not been run on the objects.
+
+`Sequence` is the reference direct manipulation policy. Its step machine
+runs the tested `cap` sequence as a row list:
+
+```text
+Move(entry) -> Move(height) -> Hold(settle)
+   -> Probe(both jaws, grip held to the end)
+   -> Loop:
+        Twist(open/close, count from probed radius)
+   -> Move(release) -> Move(centre) -> Hold(centre hold)
+   -> Probe(regrip)
+   -> Move(lift) -> Move(cap clear) -> Hold(cap clear wait)
+   -> Move(cap align) -> Move(put back)
+   -> Move(let go) -> Move(present)
+```
+
+A `Probe` latches a `grip` effort the tick contact is confirmed, so the body
+of a sequence never re-states the clamp. The base-jaw command remains in
+`SequenceState.held_*` while the auxiliary gripper twists and extracts.
+Environments may occupy different phases and use different parameter rows in
+the same rollout; `Sequence.step` contains no measurement-driven Python
+control flow or tensor-to-host conversion.
+
+`tasks/<name>.py` converts its scalar dataclass once into the row list.
+Contact closes at the approach speed the task names; free travel uses the
+task's own `travel_speed` (or the hand's `speed` gain if the task does not
+override). Their deadlines are derived separately, so slow probing does not
+make every ordinary move wait on a contact-sized timeout. Horizontal movement
+effort is floored at that hand's `torque_min_to_move`, z descent stays light,
+and any ascent uses z's measured floor via `primitives.lift_effort`.
+
+The named task is invoked the same way by both CLIs:
+
+```bash
+python -m cartesian_hand.studio --hand hand_2 --task cap
+python -m cartesian_hand.sim --hand hand_2 --task cap
+```
+
+The second command is wired correctly but cannot complete until the model has a
+bottle and cap. Programmatically, the same policy object occupies the same
+controller argument in both simulation executors:
+
+```python
+studio.live(hand="hand_2", policy=policy)
+state = sim.run(policy, cfg)
+state = sim.run_warp(policy, cfg, n_envs=N, device="cuda")
+```
+
+There is no second policy registry or configuration format: `tasks.make("cap",
+...)` returns the policy, and `tasks.make("zero", ...)` returns the fixed-program
+controller appropriate to zeroing.
+
+## Composing and tuning a task
+
+`python -m cartesian_hand.studio` serves tuning for task dataclasses and a
+timeline editor for fixed `Motions` tasks, both in the page's **tasks** window
+on the left, beside the task buttons:
+
+- **tune a task** — pick a task, drag its numbers, save the result as a variant.
+  The sliders are built from `tasks.tunables()`, which reads
+  `field(metadata={"tune": (lo, hi)})` off the task's own `Config`, so the range
+  a slider offers is declared beside the value it bounds.
+- **TASK TIMELINE** — expanded on every studio page, including watch-only mode.
+  A CAD history: select a row and its parameters load into the
+  editors, **Apply** an edit in place, **Move up/down**, **Delete**, **Insert
+  after**. A row is one action — joints, goal, torque, finish condition (`goal`,
+  `stuck`, `wait`, or externally supplied completion), optionally gated on a
+  source joint's prior stop outcome or position. Save as a new task file.
+
+**Load task** fills the timeline from the task the tune dropdown names, so an
+existing procedure can be opened and not only written. The two halves divide by
+what they can reach: tune moves the numbers a task *declared* and keeps its
+structure; load reaches everything a row has — its joints, stop rule, frame and
+predicate, none of which is a `Config` field — and keeps no structure, because
+what comes back is a flat program you save under a new name.
+
+It reads the **built program**, not the source (`compose.rows_from`, the inverse
+of `program_source`). Parsing would only ever understand the files `compose.py`
+emits — the subset that needed no editor — and would be wrong about every
+hand-written task, whose goals are expressions over a `Config` rather than
+literals. Two things therefore cannot load, and both say so instead of loading
+half a procedure: a direct `Policy` (`cap`) has no steps to show, and only the
+*first* program of a multi-program task (`zero`, `scissors`) exists before the
+task has run, since the rest are built from measurements it has not taken yet.
+Goals come back as the numbers the task computed at the pose it was built at,
+which is why the task is built at the hand's current pose.
+
+**Run to row** is the rollback marker, and the reason the panel is worth having:
+it executes rows 0..cursor on the hand and leaves it there, so the next row is
+authored from the pose the previous ones actually produced. `frame="here"`
+distances cannot be predicted from a drawing — you have to be in the pose to
+pick one.
+
+It runs the *file*: rows 0..cursor are written to `tasks/_preview.py` and
+submitted by name through the same slot the task buttons use. One execution
+path, so no class of bug that exists only in a preview. `_preview` is rewritten
+every run and gitignored.
+
+Both write `cartesian_hand/tasks/<name>.py` through `compose.py`, which imports
+no GUI. **The panel is never in the execution path** — it writes the file and
+has no further part in it, so the result runs under `sim.run` at N=4096 and on
+the bus with `studio` never imported. The dependency is studio → compose →
+tasks, never back.
+
+Feedback stays inside fixed `[N,J,K]` program tensors. Each successful row
+records `stopped_at` and `stopped_ok`; later rows evaluate `When(...)` once when
+they arm. A timeout invalidates outcome without overwriting last trustworthy
+position. Predicate-disabled rows preserve standing command. Each environment
+takes its own branch without changing K or returning to Python.
+
+### There is no automatic tuner, on purpose
+
+One shipped (`search.py`, random search over the declared bounds, ranked on
+`(row success, ticks)`, winner written as a variant). It was deleted on
+2026-09-03 because it optimises against a simulator that cannot see most of what
+it samples:
+
+- **mujoco drops torque on the floor.** `sim.profile` takes the goal and nothing
+  else. So every `*_torque` field is invisible there — 1 of `zero`'s 2 knobs, 3
+  of `cap`'s 9, and **half of every composed task's**, since each row emits a
+  `goal_i` and a `torque_i`. Sampled anyway, they came back in the winner's
+  report as if they were findings.
+- **It only found the trivial gradient.** Score rose monotonically with
+  `timeout_margin` and with nothing else. That is "a longer budget passes more
+  rows", not tuning.
+- **It disagreed with the bench, and the bench was right.** Sim scored `zero`'s
+  shipped defaults at 0.50; the hand_1 log in `tasks/zero.py` has the same
+  defaults reproducing the datum to 0.074 mm with no phase expiring. So
+  `--save-as` would have written a variant that slows real zeroing ~70% to fix a
+  simulator artifact, and shipped it to hardware.
+
+`tasks.tunables()` stays — it is what the sliders read. **A declared bound is a
+range a human may drag, not a claim the number is measurable.** Bringing a tuner
+back needs objects in the model, torque that reaches the actuators, and a score
+that is task success rather than execution success (`contacts_alive`,
+`sweep_at_least`, `contact_force_above` in the `manipulation` specs are the
+shape of it). Until then the honest instrument is **Run to row** with a human
+watching.
+
+## Execution backends
+
+Each backend can drive either `TaskRunner` or `PolicyRunner`. It reads the hand
+or simulation, builds the same millimetre observation, ticks exactly one
+controller, and applies the returned command. `servo.py` is only the real/mock
+bus adapter; it is not the common sim/real interface.
+
+### `studio.live`, servos and a page to watch them on
+
+```
+ctrl   what you asked for    slider -> mm -> counts -> set_positions
+qpos   what the hand did     read_all -> counts -> mm -> the model
+```
+
+The model's pose is never the slider. It is what came back off the bus, so the
+gap between where you asked and where the model is *is* the tracking error, live.
+Both directions are one packet, and they are the same two packets any control
+loop already sends, so closing the loop costs nothing over watching it.
+`read_all` on 7 servos is 1.47 ms and `set_positions` is 0.00 ms, because a
+sync-write is a broadcast with no reply. That is a 679 Hz ceiling, 7% of the bus
+at 50 Hz.
+
+The page is [viser](https://viser.studio/): ten visual meshes read straight off
+the compiled `MjModel`, between two windows.
+
+```
+┌──────────────────┐                              ┌──────────────────┐
+│ tasks            │                              │ torque armed     │
+│  Zero hand       │                              │ mm err load °C   │
+│  Open cap ...    │       the hand, in 3D        │  (7 rows, 10 Hz) │
+│  tune a task ▸   │                              │ 0..6 goal   (mm) │
+│  TASK TIMELINE ▾ │                              │ tuning ▸         │
+└──────────────────┘                              └──────────────────┘
+   floated left by CSS                            viser's own panel
+```
+
+Two windows because the halves are used at different times, and the left one is
+used *while watching the right*: `Run to row` is author, run, read the error,
+adjust. Tabs were tried first and put the timeline on the tab you cannot see.
+Watch-only mode (`--panel False`) builds the left window and nothing else;
+editing a task file never needed permission to move the hand.
+
+**The left window is a CSS trick, and a fragile one.** viser serves exactly one
+control panel — the theme picks floating/collapsible/fixed for it, and no
+message opens a second — so the task folder is built in that panel like
+everything else and then taken out of flow by a stylesheet the page serves
+itself (`studio.TASK_MENU_CSS`). The selector counts DOM levels from a marker
+`<div>` up to the folder's root, so a viser client that adds or drops a wrapper
+renders the menu quietly back inside the right-hand panel. That is invisible to
+Python, so `tests/test_web_studio.py` drives a real browser and asserts the
+window's geometry; it skips where playwright or Chrome is missing.
+
+Numbers, not bars: 0.01 mm of tracking error is a real number and zero pixels,
+and a bar would have to be built wider than `config`'s travel to show a rail
+overrun. There is no GL context in this process, and the control loop is the
+only thread this module starts. `--studio False` falls back to MuJoCo's passive
+viewer, and `--no-viewer` prints millimetres.
+
+The loop writes `qpos` and calls `mj_forward`, never `mj_step`. Stepping would
+re-simulate, and gravity and contact would pull `qpos` away from the values the
+hand reported, so you would be watching MuJoCo's physics rather than the hand.
+`mj_forward` also does not clamp to `jnt_range`, so a real pose outside the
+model's declared travel renders as it truly is. With the travel tables
+disagreeing by up to 76%, that is the measurement, not a rendering fault.
+
+A page button submits a task, and the loop ticks its `PolicyRunner` or
+`TaskRunner` in place of the sliders, still as the only writer on the bus. The
+earlier design ran tasks on their own thread, which put two writers on one bus,
+so the loop had to stop commanding while a task ran. That gate was a second
+control path with its own bugs, and it could not exist in sim at all.
+
+### `sim.run`, MuJoCo
+
+Same task files, not a port of them. What differs is six lines: `mj_step` and a
+`qpos` read where the other has `set_positions` and `read_all`.
+
+Two things it does not cover. **Effort is ignored here.** The MJCF's actuators
+are `<position>` with a fixed `kp`, so there is no per-joint gain to write it
+into, and every `stop="stuck"` fires against a joint limit rather than against a
+grip that yields at a tuned force. That is enough to prove a task runs and not
+enough to transfer a *force*. The stock MJCF also has no bottle or cap, so it
+cannot produce honest object contact or task success. `sim.run` is CPU and N=1;
+`sim.run_warp` runs the same task or policy over batched GPU worlds. Batching is
+there, but the missing object and effort dynamics still make automatic tuning
+misleading.
+
+`mj_step` here and `mj_forward` in the studio, for opposite reasons. In the
+studio the physics *is* the hand, and re-simulating would overwrite what it
+reported. Here the physics is all there is. Stepping is also what applies the
+`<equality>` couplings, so a rack pair's follower moves on its own instead of
+needing the explicit write the studio loop does.
+
+Live visualization is the viser page in `studio.py`. There is no shipped offline
+video wrapper. If one is needed, use `mujoco.Renderer` on the already-loaded
+model; raise `model.vis.global_.offwidth/offheight` before constructing it and
+raise the default headlight for this dark model. A second robot_studio/VTK scene
+representation is not justified for frame or video output.
+
+## Zeroing
+
+Zeroing turns encoder counts into millimetres with an absolute meaning. Three
+phases, in mechanical order: fingers retract before jaws close, jaws clear before
+z drops. Not cosmetic. Run them the other way and a finger is inside a jaw that
+is closing.
+
+**It runs in a relative frame, and needs to.** Millimetres are undefined before
+it completes. It does not need absolute millimetres, it needs *distances*. Every
+goal is `here ± something`, so the frame's origin cancels and the task is correct
+in the startup-relative frame an uncalibrated hand already uses, in the calibrated
+frame, and in the sim's where `q = 0` is the rest pose. One task, three frames,
+no branch.
+
+The consequence is real: **a zeroing goal is outside the travel table on
+purpose.** The seek asks for 120 mm of travel on a 55 mm rail because the stop,
+not the number, is meant to end the move. So `studio.live` does not clamp task
+goals, only slider goals, on the grounds that a human at a slider can ask for
+anything and a program's goals were already bounded when it was built. What keeps
+the unclamped path safe is direction: millimetres decrease toward the closed end,
+which is a hard stop that physically exists, and the only unbounded request goes
+that way. Every outward move a task makes is bounded at build time by
+`clamped_mm`.
+
+> Do not "fix" this by clamping in the loop. It quietly turns the seek into a
+> no-op when the hand starts near 0.
+
+**A DOF that never stalls aborts the run, and nothing is written.** A joint that
+ran out of budget also stopped moving, and where it ended up cannot tell the two
+apart, so the outcome is checked rather than the position. Recording a timed-out
+DOF puts the origin somewhere mid-travel and makes every later millimetre on that
+axis wrong by however far it fell short, without any warning, in the direction of
+the open end of the rail. Offsets accumulate in a local tensor and are saved only
+after all three phases succeed, so a failed run leaves the previous calibration
+intact and needs no rollback branch.
+
+Offsets are written to `zero_offsets.json` at the project root, keyed by hand
+name. Project root and not the package directory, because `pip install -e .`
+wipes the latter and a lost calibration costs a bench session; gitignored,
+because the numbers describe one physical machine. Override the location with
+`CARTESIAN_HAND_CALIB`. That file is generated, so do not edit it by hand.
+
+`Config.sets_datum = True` is what routes the result, rather than a
+`name == "zero"` comparison, so a retuned zeroing variant in its own file still
+installs its calibration.
+
+## Configuration
+
+A hand is one flat frozen dataclass, `HandConfig`, and a hand definition is two
+lines:
+
+```python
+HAND_1 = HandConfig(name="hand_1", port="/dev/ttyACM0", first_servo_id=0)
+```
+
+Everything absent from that call comes from the shared tables at the top of
+`cartesian_hand/config.py`. Only what is true of one unit and not the other is
+written per hand, which today is the serial port, where its servo IDs start, and
+the zeroing creep torque.
+
+An earlier version nested `Dof`, `Motion` and `Geometry` inside `HandConfig`.
+Three extra types, a `cfg[dof].max_mm` to read one travel limit, and both hands
+filling in identical `Motion` and `Geometry` objects. What is genuinely per-DOF
+— axis, count direction, label — is the same on every hand built so far, so it
+lives in `LAYOUT` once rather than in seven objects per hand.
+
+`config.py` reads top to bottom: the shared tables (`LAYOUT` and the role names,
+`STANDARD_TRAVEL`, `TORQUE_MIN_TO_MOVE`, `TORQUE_STUCK`, `CALIB_PATH`,
+`DEFAULT_HAND`), the one dataclass, the two hands, then the calibration file
+helpers. Nothing downstream holds a hardware constant of its own, so retuning a
+gear ratio or a travel limit never means opening control code.
+
+Prefer a `/dev/serial/by-id/` path over `/dev/ttyACM0`. ACM numbers are handed
+out in enumeration order, so with two hands plugged in, a hardcoded number
+silently addresses whichever powered up first.
+
+Frozen is not style: the per-DOF tensors are cached per device, so mutating
+`cfg.torque` after anything has called `gain_vector` leaves the old torque in the
+cache and every later tick keeps commanding it. A docstring saying "immutable"
+does not stop that; `FrozenInstanceError` does. Use `variant()`, which drops the
+cache.
+
+Everything per-DOF is a `torch.Tensor`, so that `device="cuda"` is the only
+difference between the sim backend at N=4096 and the hardware backend at N=1.
+numpy is faster at this size, about 0.3 µs against 3 µs for a 7-element convert,
+but both are noise against a 20,000 µs tick at 50 Hz. So the tiebreak is having
+one array library rather than a boundary to keep straight. The boundary that
+remains is the bus, and it is in the right place: `read_all` returns Python
+tuples with `None` for a servo that did not answer, and that `None` has to stay
+`None`. Writing a placeholder hands the layer above a fabricated position, which
+reads as a large jump, the opposite of the stall it is watching for.
+
+### Motion gains
+
+`torque`, `speed` and `acc` each take a scalar or a per-DOF sequence. A wrong
+length raises at construction, not at the first servo write.
+
+```python
+HandConfig(..., torque=50)                              # all DOFs
+HandConfig(..., torque=[50, 50, 50, 300, 50, 50, 50])   # z stage at 300
+```
+
+Mixing values costs nothing. A sync-write is one broadcast packet in which each
+servo reads its own slice, so seven different torques and seven identical ones
+are the same packet and the same time on the wire.
+
+The z stage is the only DOF carrying a gravity load. Bisected on `hand_2`,
+lifting 30 mm to 35 mm and measuring travel after 3 s:
+
+| torque | 150 | 200 | 250 | 300 | 350 |
+|---|---|---|---|---|---|
+| moved (of 5.0 mm) | 1.50 | 4.54 | 4.54 | 4.54 | 4.53 |
+
+The cliff is sharp. 150 stalls outright, 200 tracks fully, and nothing above 200
+helps. `TORQUE_MIN_TO_MOVE` uses 300, the measured floor plus margin, because the
+bisect ran unloaded and the stage has to lift the aux gripper while it is holding
+something. Pressing *down* at 50 works and tasks rely on it, so this is a floor
+for the lifting direction, not a correction to the whole axis.
+
+`torque_stuck` is separate from `torque`, because zeroing presses each
+DOF into its stop and the stall is the signal rather than a fault. Too much
+torque binds before the stop, too little stalls short of it, and both read as a
+hard stop in the wrong place.
+
+It is per hand rather than one shared table, because the window between those two
+failures is set by friction and friction is per unit: raising the number for a
+stiff gear train would also push a looser hand's fingers through the stall window
+and past their stop. Travel and gearing are shared; this is not. Both hands
+currently run `TORQUE_STUCK`, the default, measured on `hand_2`. Retune one
+without touching the other:
+
+```python
+HAND_1 = HandConfig(name="hand_1", port="/dev/ttyACM0", first_servo_id=0,
+                    torque_stuck=(200, 60, 60, 300, 200, 60, 60))
+```
+
+The fingers came down from 80 to 50 after they climbed a gear tooth on `hand_2`:
+at 80 the creep carried enough momentum that the stall window could not catch it
+before it overshot. If a joint still sounds loaded at the end of a seek, come
+down further on that hand.
+
+`counts_per_mm` is derived from the pitch diameter, but a real gear train is not
+its nominal drawing. After measuring a known travel, set it directly and the
+derived value is ignored:
+
+```python
+HandConfig(..., counts_per_mm=80.0)
+```
 
 ## Setting up a servo
 
-Servos ship with an ID that will collide with the rest of the bus, so each one
-is renamed before it goes into a hand. `hand_1` uses IDs 0-6 and `hand_2` uses
-7-13, in the DOF order of `LAYOUT`.
+Servos ship with an ID that collides with the rest of the bus, so each is renamed
+before it goes into a hand. `hand_1` uses IDs 0-6 and `hand_2` uses 7-13, in
+`LAYOUT` order. Connect one servo at a time, or the rename is ambiguous and the
+new ID could collide with one already in use.
 
-```bash
-python -m cartesian_hand set-id 7 --port /dev/ttyACM0
-```
-
-Connect one servo at a time. Both tools below refuse to run with several on the
-bus: the rename would be ambiguous, and the new ID could collide with one
-already in use. The old ID is found by scanning, so a servo whose ID nobody
-recorded is fine.
-
-The submodule carries a standalone version that also drives the motor
-afterwards, which is worth having on the bench: a ping only proves something
-answers to the new ID, while motion proves it is the servo in front of you.
+Keep the blocks non-overlapping. They are the only thing that tells one hand from
+another over the bus, and `config.identify` uses them: `studio` with no `--hand`
+sync-reads each hand's block and opens whichever one answers. Two hands on one
+bus, or seven servos that answer where six should, is refused rather than
+guessed. A new hand needs a fresh block and an entry in `config.HANDS`.
 
 ```bash
 python -m hardware_bindings.ft_servo set-id /dev/ttyACM0 7
@@ -67,603 +784,242 @@ python -m hardware_bindings.ft_servo scan /dev/ttyACM0
 python -m hardware_bindings.ft_servo gui /dev/ttyACM0 --ids 7 8 9
 ```
 
-The submodule tools take a device path and know nothing about hands, DOFs or
-millimetres; `python -m cartesian_hand scan` is the hand-level equivalent and
-resolves the port from a hand name. They need `pip install -e
-'hardware_bindings[cli]'`, or `[gui]` for the GUI. See
+The GUI is worth having on the bench: a ping only proves that something answers
+to the new ID, while motion proves it is the servo in front of you. These tools
+take a device path and know nothing about hands, DOFs or millimetres. They need
+`pip install -e 'hardware_bindings[cli]'`, or `[gui]` for the GUI. See
 [`hardware_bindings/ft_servo/README.md`](hardware_bindings/ft_servo/README.md).
 
-Renaming writes to the servo's EPROM and survives power cycles. Once renamed,
-the only way to find a servo again is to scan for it.
+Renaming writes to the servo's EPROM and survives power cycles. Once renamed, the
+only way to find a servo again is to scan for it.
 
 ## Running without hardware
 
 `--mock` swaps the serial driver for a kinematic model with hard stops. Servos
 ramp toward their targets and stall at the ends of travel, which is enough to
-exercise unit conversion, task sequencing, and policy code:
+exercise unit conversion, task sequencing, and the studio loop:
 
 ```bash
-python -m cartesian_hand zeroing --mock
-python -m cartesian_hand demo --mock
-python test_cartesian_hand.py
+python -m cartesian_hand.studio --mock --task zero
+for f in tests/test_*.py; do python "$f"; done
 ```
 
 The mock has no friction, no load-dependent stall and no following error. It
-tells you whether your control flow is right, not whether your grip will hold.
-
-## What the seven DOFs are
-
-Two grippers share one vertical stage. Each gripper is a parallel jaw plus two
-independent finger slides; the stage carries the auxiliary gripper up and down.
-That is what lets the hand hold a bottle in one gripper and turn the cap with
-the other.
-
-Every DOF is linear and commanded in millimetres, measured from the hard stop
-that zeroing finds. There are no rotary joints in the controller's view, even
-though the servos themselves rotate — the rack converts turns to travel.
-
-| DOF | Role name | Axis | Orient | What it does | Servo `hand_1` / `hand_2` |
-|----:|-----------|:----:|:------:|--------------|:-------------------------:|
-| 0 | `BASE_JAW` | y | −1 | base parallel actuation | 0 / 7 |
-| 1 | `BASE_LEFT` | x | +1 | base left finger | 1 / 8 |
-| 2 | `BASE_RIGHT` | x | −1 | base right finger | 2 / 9 |
-| 3 | `Z` | z | −1 | vertical translation | 3 / 10 |
-| 4 | `AUX_JAW` | y | −1 | aux parallel actuation | 4 / 11 |
-| 5 | `AUX_LEFT` | x | +1 | aux left finger | 5 / 12 |
-| 6 | `AUX_RIGHT` | x | −1 | aux right finger | 6 / 13 |
-
-Three things the table hides:
-
-**DOF index is not servo ID.** The index is how the controller addresses a DOF
-and is the same on every hand; the servo ID is what answers on the serial bus
-and differs per hand. Everything user-facing — actions, observations, `set_pos`,
-`normalize` — is in DOF index order. Servo IDs appear only inside the driver.
-
-**`orientation` is which way the servo counts.** `+1` means rising counts are
-rising millimetres, `-1` the opposite. It exists because a left and a right
-finger are mirror images: the same physical motion is a rising count on one and
-a falling count on the other. It describes how the servo was installed, so a
-rebuilt hand may need it flipped.
-
-**The ordering is authoritative for the simulation.** DOF order here is the
-order the twin's actuators must be in, not the other way round. A twin ordered
-differently produces a policy that drives the right values into the wrong
-joints, and the contract check will not catch it — the fingerprint hashes travel
-limits and rate, not which servo is which.
-
-Names live in [`cartesian_hand/tasks/roles.py`](cartesian_hand/tasks/roles.py),
-with the groups tasks actually use: `JAWS`, `BASE_FINGERS`, `AUX_FINGERS`. The
-layout itself is `LAYOUT` in `hand.py`, and `standard_dofs(first_servo_id)`
-stamps it out with consecutive servo IDs — the only difference between the two
-hands.
-
-DOF 3 is the odd one out in every practical sense. It is the only DOF carrying a
-gravity load, so it needs its own torque (see Motion gains), it falls to rest
-whenever torque drops, and it is the DOF whose zeroing repeats worst between
-runs. See Known issues.
-
-## Configuration
-
-Hands are defined at the top of
-[`cartesian_hand/hand.py`](cartesian_hand/hand.py). It is a Python module rather
-than a data file because the hands are near-identical: they differ only in
-serial port and servo ID block, so one helper covers both without repeating the
-DOF table.
-
-```python
-HAND_2 = HandConfig(
-    name="hand_2",
-    port="/dev/serial/by-id/usb-1a86_USB_Single_Serial_5AE6085950-if00",
-    dofs=standard_dofs(first_servo_id=7),
-    motion=Motion(control_hz=50, torque=STANDARD_TORQUE, speed=300, acc=25),
-    geometry=Geometry(gear_pitch_diameter_mm=16.0, counts_per_rev=4096),
-)
-```
-
-`hand.py` opens with the tunables — `LAYOUT`, `STANDARD_TRAVEL`,
-`STANDARD_TORQUE`, `ZEROING_TORQUE`, `DEFAULT_HAND` — then the types, then the
-hand definitions, then the controller. Configuring a hand means reading the top
-of one file and stopping there. To add a hand, build a `HandConfig` and add it
-to `HANDS`. To change which hand commands use by default, edit `DEFAULT_HAND`.
-
-Prefer a `/dev/serial/by-id/` path over `/dev/ttyACM0`. ACM numbers are handed
-out in enumeration order, so with two hands plugged in, whichever powers up
-first takes `ACM0` and a hardcoded number silently addresses the wrong hand.
-The by-id path is tied to the adapter's serial number.
-
-### Motion gains
-
-`torque`, `speed` and `acc` each take a scalar or a per-DOF sequence. A scalar
-broadcasts to every DOF; a sequence lets one axis differ:
-
-```python
-Motion(torque=50)                          # all DOFs
-Motion(torque=[50, 50, 50, 150, 50, 50, 50])   # z stage at 150
-```
-
-A wrong-length sequence raises at construction, not at the first servo write.
-
-Mixing values costs nothing. A sync-write is one broadcast packet in which each
-servo reads its own slice, so `SyncWritePosEx` takes `Speed[]`, `ACC[]` and
-`Torque[]` as per-servo arrays — seven different torques and seven identical
-ones are the same packet and the same time on the wire.
-
-The z stage is the only DOF carrying a gravity load, and it needs more torque
-than the six horizontal ones. Bisected on `hand_2`, lifting 30mm to 35mm and
-measuring travel after 3 seconds:
-
-| torque | 150 | 200 | 250 | 300 | 350 |
-|---|---|---|---|---|---|
-| moved (of 5.0mm) | 1.50 | 4.54 | 4.54 | 4.54 | 4.53 |
-
-The cliff is sharp: 150 stalls outright, 200 tracks fully, nothing above 200
-helps. `STANDARD_TORQUE` uses 300 — the measured floor plus margin, because the
-bisect ran unloaded and the stage exists to lift the aux gripper while it is
-holding something.
-
-Pressing *down* at 50 works and tasks rely on it, so this is a floor for the
-lifting direction rather than a correction to the whole axis.
-
-`counts_per_mm` is derived from the pitch diameter, but a real gear train is not
-its nominal drawing. After measuring a known travel distance, set it directly
-and the derived value is ignored:
-
-```python
-Geometry(counts_per_mm=80.0)
-```
-
-Zero offsets are measured rather than authored, so the zeroing task writes them
-to `~/.cartesian_hand/zero_offsets.json`, keyed by hand name. They live outside
-the package because `pip install -e .` wipes the package directory, and losing a
-calibration means re-driving every DOF into its hard stop. Override the location
-with `CARTESIAN_HAND_CALIB`. That file is generated; do not edit it by hand.
-
-## Running a policy from a digital twin
-
-The bridge between a twin and the hardware is a fixed contract, defined in
-[`cartesian_hand/policy.py`](cartesian_hand/policy.py):
-
-- Actions and observed positions are normalized to `[-1, 1]` per DOF. A policy
-  never sees millimetres, serial ports, servo IDs or count directions.
-- An action is an absolute position target, not a delta or a velocity.
-- DOF ordering is the ordering in `HandConfig.dofs`.
-- Steps run at a fixed rate, `motion.control_hz` unless overridden.
-
-Export that contract and build the twin against it:
-
-```bash
-python -m cartesian_hand contract --hand hand_2 -o contract.json
-```
-
-`fingerprint()` hashes exactly the fields above and nothing else. Two hands on
-different ports with different servo IDs but the same kinematics share a
-fingerprint, so a policy moves between them. Change a travel limit or the
-control rate and the fingerprint changes, because a policy tuned against the old
-geometry is no longer valid.
-
-Stamp the fingerprint onto whatever the twin produces. The runner compares it
-against the connected hand and aborts on a mismatch rather than driving real
-hardware with the wrong assumptions.
-
-A policy is any object with an `act(obs) -> action`:
-
-```python
-from cartesian_hand.hand import connect
-from cartesian_hand.policy import Policy, run_policy
-
-class Pinch(Policy):
-    def __init__(self, config):
-        self.fingerprint = config.fingerprint()
-        self.jaws = config.dofs_on("y")
-        self.n_dof = config.n_dof
-
-    def act(self, obs):
-        action = np.zeros(self.n_dof)
-        action[self.jaws] = -1.0          # close
-        return action
-
-with connect("hand_2") as hand:
-    rollout = run_policy(hand, Pinch(hand.config), duration=5.0)
-    rollout.save("run.npz")
-```
-
-Either form runs from the command line:
-
-```bash
-python -m cartesian_hand policy rollout.npz --hand hand_2
-python -m cartesian_hand policy my_module:MyPolicy --hand hand_2 --record run.npz
-```
-
-See [`examples/twin_policy.py`](examples/twin_policy.py) for a worked version.
-
-### What the runner adds, and why
-
-Hardware is not the twin, so `run_policy` is not a bare loop:
-
-- Slew limiting (`max_delta`, default 0.05 normalized units per step). A twin
-  can teleport a joint between steps. A servo answers the same command with
-  maximum current. At 50mm of travel and 50Hz the default caps a DOF at 2.5mm
-  per step. Pass `--max-delta 0` to disable it, but measure the current draw
-  first.
-- Non-finite actions are rejected. A diverged network should not reach the bus.
-- Actions are clipped to real travel limits, so a saturating policy presses
-  against the joint limit instead of commanding past it.
-
-Replaying a recorded rollout is the first thing to try when a transfer fails. If
-the replay works and the live policy does not, the gap is in the policy. If the
-replay also fails, the gap is in the dynamics.
-
-Two cases the contract check treats as errors, not warnings:
-
-- A rollout with no fingerprint. A recorded trajectory is a fixed sequence of
-  positions and only means anything on the geometry it came from, so an
-  unlabelled one is refused rather than assumed compatible. A hand-written
-  policy with no fingerprint is allowed, because it is geometry-agnostic by
-  construction.
-- Passing `--hz` different from the hand's configured rate. The rate is part of
-  the fingerprint, so replaying faster commands proportionally faster motion and
-  would quietly invalidate the check that just passed.
-
-`counts_per_mm` is deliberately not in the fingerprint. It is a per-machine
-calibration: two units with the same 60mm of travel and slightly different gear
-trains need different values to both actually reach 60mm. Including it would
-make correctly calibrated hands look incompatible.
-
-## Hardware status
-
-Brought up on `hand_2` (servo IDs 7-13, one CH340 adapter at 1Mbaud). What has
-actually run on servos:
-
-- All seven servos enumerate and report plausible voltage and temperature
-  (11.3-11.5V, 24-26C).
-- Full zeroing completes. Every DOF finds a hard stop and parks at mid travel,
-  reading 30.0mm across all seven afterwards.
-- The offsets are multi-turn, which settles an open question: `[4293, -1412,
-  5608, 5837, 4526, 2012, 6762]` includes values past one 4096-count revolution
-  and one negative. These servos are not running inside a single turn, and the
-  sign-magnitude encoding in the driver is exercised by real traffic.
-- Normalized `move()` actions track. Six DOFs converge to within 0.03mm; the z
-  stage needs its raised torque to do so (see Motion gains above).
-- Zeroing uses per-DOF creep torque (`hand.ZEROING_TORQUE`), higher on the z
-  stage, instead of a flat value that left z in mid-air. Verified on `hand_2` at
-  the old table: all seven DOFs park at mid travel and read 29.7-30.0mm against
-  the new offsets, two consecutive runs agreeing to within 7 counts. The table
-  has since been doubled for `hand_1` and that result has not been re-taken. See
-  Known issues.
-- The control loop is two bus packets per step regardless of gains: one
-  sync-read covering all seven servos, one sync-write carrying per-joint
-  positions and gains. Measured on `hand_2`:
-
-  | | 7 unicast | 1 sync | |
-  |---|---|---|---|
-  | read | 1.97ms | 1.47ms | one TX replaces seven, but each servo still replies |
-  | write | 2.35ms | ~0ms | broadcast, unacked, so nothing to wait for |
-
-  Sync-read saves less than it looks like it should — it eliminates the seven
-  request packets, not the seven replies. Sync-write is nearly free because
-  nobody ACKs a broadcast.
-- Zero offsets survived a power cycle: after replugging, six DOFs read 30.00mm
-  against offsets saved the previous session, and the z stage read 28.73mm,
-  having drooped 1.27mm under gravity when torque was cut.
-
-Not yet established:
-
-- **Zeroing does not repeat on all seven DOFs.** Two runs agree to within
-  0.05mm on five of them, disagree by 14.2mm on the z stage and 1.6mm on one
-  jaw. See Known issues.
-- **Total travel is still unmeasured.** Zeroing finds one hard stop per DOF, not
-  both, so `max_mm = 60` remains an assumption. See Known issues.
-- `counts_per_mm` is still the derived value, never checked against a measured
-  distance.
-- No task beyond `zeroing` has run on hardware, and no policy has been
-  transferred from a twin.
-- Grip force has not been characterised.
-
-### Safety notes
-
-- A mock run's offsets are the mock's hard-stop constants, not a measurement, so
-  they are saved under a separate `<hand>_mock` key and can never load onto the
-  real hand.
-- Zeroing drives each DOF into its hard stop at low torque and calls the stop
-  wherever motion ceases. A jammed mechanism looks the same as an end stop, so
-  watch the first run and check the reported offsets before trusting them.
-- If a phase fails partway, offsets roll back to whatever was loaded before.
-  A partial calibration is never left in place.
-- A DOF that never stalls is reported as a failure rather than zeroed at its
-  last position, which would put the origin mid-travel.
-- If the control loop hits a driver error it drops torque before exiting. It
-  runs on a daemon thread, so without that the servos would sit holding their
-  last target with nothing driving them.
-- `release()` stops the loop before cutting torque, so the loop cannot
-  re-command a servo that is being released.
-
-## Writing a task
-
-A task is a module in `cartesian_hand/tasks/` exposing a `Config` dataclass,
-`run(hand, cfg)`, and `DESCRIPTION` for the help text. Dropping a file in that
-directory registers it. The CLI is generated by [tyro](https://brentyi.github.io/tyro/)
-from `Config`, so the flags, their types and their help text all come from the
-dataclass. There is no parser to write and nowhere for the flags and the
-function to drift apart:
-
-```python
-from dataclasses import dataclass
-from .roles import Z
-
-DESCRIPTION = "Wave hello"
-
-@dataclass
-class Config:
-    reps: int = 3
-    """How many times to wave."""
-
-def run(hand, cfg: Config):
-    try:
-        for _ in range(cfg.reps):
-            hand.set_pos({Z: 40.0})
-            hand.set_pos({Z: 10.0})
-    finally:
-        hand.release()
-```
-
-That gives you `python -m cartesian_hand wave --reps 5 --mock`, with `--reps`
-documented from the field docstring.
-
-Address DOFs by role, not index. `hand.set_pos({AUX_JAW: 12.0})` says what it
-does; `set_pos([None, None, None, None, 12.0, None, None])` hides the meaning in
-the position of the one entry that is not `None`. Role names are in
-[`cartesian_hand/tasks/roles.py`](cartesian_hand/tasks/roles.py).
-
-Gains are per DOF. Setting torque on one DOF does not disturb another, so a jaw
-can keep squeezing while a different DOF transits.
-
-Shared motion helpers (`approach`, `squeeze`, `wait_for_stall`) are in
-`cartesian_hand/tasks/primitives.py`.
+tells you whether your control flow is right, not whether your grip will hold. It
+is also 870 times faster than the real bus, 1.7 µs against 1.47 ms for
+`read_all`, so a mock-only profile points at the wrong thing every time.
 
 ## Layout
 
 ```
 cartesian_hand/
-  hand.py          tunables, then what a hand is (HandConfig, unit conversion,
-                   the policy contract), then which hands exist, then
-                   CartesianHand: control loop, motion, zero-offset persistence
-  policy.py        Policy contract, run_policy, Rollout, replay
-  servo.py         how to talk to a serial bus of FT servos: loads the compiled
-                   extension, or returns MockServo for offline runs
-  __main__.py      the single entry point, a tyro CLI over these dataclasses
-  tasks/           one module per task, auto-registered
-hardware_bindings/ submodule: IMU, motor and servo bindings. Only ft_servo/ is
-                   compiled here, and it is the sole copy of the servo driver.
-  ft_servo/__main__.py   bench tools: scan, set-id, gui
-  ft_servo/ft_servo_python_only.py   second, unused driver: see below
-examples/          twin-to-real worked example
+  config.py      tunables, then the types, then the hands. Pure description:
+                 no port, no threads, no I/O beyond JSON, so a twin can import it
+  motions.py     the engine (Motions, Move, Program) plus TaskRunner
+  policy.py      typed Observation, Action, Policy protocol, and PolicyRunner
+  primitives.py  legacy Step helpers plus direct closed-loop primitives
+  tasks/         one file per task; the file stem is the --task name. A direct
+                 task holds its human-scale Config, its build(), and its tensor
+                 state machine in that one file -- the machine below a
+                 `# -- policy --` divider. They were split across a
+                 <name>_policy.py at package root until 2026-09-04; six
+                 near-identical controllers in six files is how one deadline
+                 bug got copy-pasted into all of them
+    zero.py      find every hard stop, report it as the hand's zero
+    cap.py       probe, strokes, extract. Unscrewing a bottle cap
+    bulb.py      unscrew a bulb, then thread it back in
+    screwdriver.py  turn a screwdriver either way; cw presses z
+    pipette.py   twist-lock knob, then plunge and draw
+    syringe.py   clamp the body, draw the plunger, dispense
+    scissors.py  two-handle tool; z travel is the pivot
+    tilt.py      grip with both stages, pitch the object
+  studio.py      the hardware backend: live loop plus the viser page (WebStudio)
+  sim.py         the MuJoCo backend
+  mjcf.py        model path and the DOF-to-joint map, split out of studio so
+                 sim does not import a web server to find a qpos address
+  servo.py       the serial bus, and MockServo for offline runs
+tests/           one file per module, plain asserts, no framework
+hardware_bindings/  submodule: IMU, motor and servo bindings. Only ft_servo/ is
+                    compiled here, and it is the sole copy of the servo driver.
 ```
 
-Three files, in the order you would read them: `hand.py` says what the hardware
-is and how to drive it, `policy.py` how a twin-developed policy reaches it, and
-`__main__.py` how to run any of it from a shell.
+`config.py` says what the hardware is. `motions.py` is the fixed program path,
+still used by `zero` and `tilt`; `policy.py` and `primitives.py` are the direct
+path every other task takes. `studio.py` and `sim.py` execute both.
 
-`hand.py` was two files until recently, `hands.py` and `hand.py`, splitting
-description from behaviour. The names differed by one character and nothing else
-told you which was which. The split was justified on the grounds that the twin
-must not import a serial driver it cannot build — but that was never why it
-worked: `servo.open_driver` imports the compiled extension lazily, inside the
-call, so importing the merged module still touches no hardware.
+`cartesian_hand_old/` is the previous implementation, kept as reference only, and
+nothing imports it. (`examples/twin_policy.py` and the root `test_cartesian_hand.py`
+were removed 2026-09-02: both still imported the deleted `cartesian_hand.hand`
+and could not run.)
 
-`hardware_bindings/ft_servo/ft_servo_python_only.py` is not one of them. It is a
-pure-Python reimplementation of the same SCS wire protocol the C++ extension
-speaks, over `pyserial` instead of nanobind.
+## Hardware status
 
-```python
-from hardware_bindings.ft_servo.ft_servo_python_only import FtServo  # pip install -e '.[serial]'
-```
+Brought up on `hand_2`: servo IDs 7-13, one CH340 adapter at 1 Mbaud.
 
-It existed for two EPROM operations the extension lacked, and `change_id.py` was
-its one importer. `write_id` is bound in C++ now and the bench tools were merged
-into `ft_servo/__main__.py` on the compiled driver, so nothing imports it at all:
-404 lines of second protocol implementation, reachable only by typing the path
-above. `set_position_offset` plus raw `unlock_eprom`/`lock_eprom` are the only
-things it can still do that the extension cannot. Either bind those three and
-delete the file, or keep it and accept that two drivers must stay in agreement
-with nothing enforcing it.
+What has run on servos:
+
+- All seven servos enumerate and report plausible voltage and temperature,
+  11.3-11.5 V and 24-26 °C.
+- 50 Hz measured in-loop with zero drops. A 5 mm goal on DOF 1 tracked to 0.01 mm
+  of error.
+- The loop is two bus packets per step regardless of gains: one sync-read
+  covering all seven servos, one sync-write carrying per-joint positions and
+  gains.
+
+  | | 7 unicast | 1 sync | |
+  |---|---|---|---|
+  | read | 1.97 ms | 1.47 ms | one TX replaces seven, but each servo still replies |
+  | write | 2.35 ms | ~0 ms | broadcast, unacked, so nothing to wait for |
+
+  Sync-read saves less than it looks like it should, because it removes the seven
+  request packets and not the seven replies.
+- The tick is 89% sleep. Serial I/O is the only real cost in it, and it cannot be
+  shrunk from Python. Before optimizing anything in this loop, re-read the table
+  in `MEMORY.md`.
+- `acc` changes lag, not reachability. On the same 5 mm ramp, acc=25 peaks at
+  1.37 mm of lag and acc=255 at 0.56 mm. All values arrive.
+- Full zeroing completed under the *previous* implementation, with offsets that
+  are multi-turn. `[4293, -1412, 5608, 5837, 4526, 2012, 6762]` includes values
+  past one 4096-count revolution and one negative, so these servos are not
+  running inside a single turn.
+
+Not yet established:
+
+- **No direct manipulation policy has completed on its physical object.** The
+  canonical `--task cap` path does complete through the real `studio.live` bus
+  executor with `MockServo` providing bottle/cap stops. This exercises the actual
+  command conversion, low-speed contact approach, persistent grip, per-phase
+  effort, and extraction sequence; only the mechanics are mocked. The stock
+  MuJoCo model has no equivalent objects, so object simulation is not used as a
+  completion gate.
+- **The five tasks ported from `cartesian_hand_old_validated_real/` are
+  transcriptions.** `bulb`, `screwdriver`, `pipette`, `syringe` and `scissors`
+  are covered by typed batched unit tests and enter the real executor path
+  correctly, but the *sequences* are what was validated on hardware, not these
+  implementations of them. Each needs its object and a calibrated hand.
+  Two deliberate divergences from the validated code are recorded in the task
+  docstrings: `syringe` opens the aux jaw at entry instead of closing it to
+  `aux_min_mm` (the original relied on an unchecked `set_pos` timeout), and every
+  ported task floors its horizontal and z-ascent efforts at that hand's measured
+  `torque_min_to_move` rather than inheriting a flat travel torque.
+- **Total travel is unmeasured.** Zeroing finds one hard stop per DOF, not both,
+  so `STANDARD_TRAVEL` is still CAD. See Known issues.
+- `counts_per_mm` is still the derived value, never checked against a measured
+  distance.
+- Grip force has not been characterised, and no policy has been transferred from
+  a twin.
+
+### Test suite
+
+The package test directory currently passes 137 tests. Repository-wide pytest
+also collects `hardware_bindings/imu/test_dual_imu.py`, which requires the
+separately built `imu_nanobind.abi3.so`; collection stops when that optional
+hardware extension is absent.
+
+Counting tests measures nothing. Mutate the code and re-run. The recipe and the
+results table are in `MEMORY.md`, including the case where a test named for the
+exact bug could not see it, because its body contained a copy of the logic it was
+meant to be checking.
 
 ## Known issues
 
 **`max_mm` is a limit, not a description.** There is one hard stop per DOF, the
 one zeroing seeks. The far end of each rail is open by design: drive past it and
-the carriage leaves the slider and the servo spins free. `max_mm` is the only
-thing that stops that happening, and it has never been measured. The config
-carries the v2 CAD figures — 50mm on the z stage and jaws, 55mm on the fingers —
-in `hand.STANDARD_TRAVEL`, one shared table because a joint limit belongs to
-the model and the two hands are two physical realizations of it.
+the carriage leaves the slider and the servo spins free. `STANDARD_TRAVEL` is the
+only thing that prevents that, and it has never been measured. It carries the v2
+CAD figures, 50 mm on the jaws and z stage and 55 mm on the fingers.
 
-It used to say a flat 60 on all seven, which was over-travel on every DOF and
-10mm of it on the jaws and z. `standard_dofs` took a single scalar and stamped
-it across the whole layout, so the per-DOF plumbing that already existed
-everywhere else — `lower`, `upper`, `clamp`, `normalize`, `contract` — was being
-handed one number seven times.
+For the jaw pairs there are four numbers, disagreeing by up to 76%:
 
-It cannot be measured by driving. A `travel` task tried — seek the far stop,
-report the span — and the premise is false, because there is no far stop to
-find. Run on `hand_2` it took six of seven carriages off their rails. Deleted;
-the one measurement it produced before things came apart is that DOF 0 stalled
-2428 counts from its zero, 29.8mm at the configured `counts_per_mm`, against a
-CAD figure of 50. One datum from a run that was itself coming apart: enough to
-distrust the 50, not enough to replace it.
+| source | mm |
+|---|---|
+| `config.STANDARD_TRAVEL` | 50.0 |
+| the sim MJCF `ctrlrange` | 52.6317 |
+| the sim policy specs | 57.0 |
+| `hand_2` DOF 0, stalled, measured | 29.8 |
 
-Measure with calipers and type the numbers into `STANDARD_TRAVEL`.
-`counts_per_mm` is hand-wide, so one axis calibrates all seven; travel is
-per-DOF and each rail needs its own.
+The 29.8 is probably right. `EXPORT_NOTES.md` derives 52.6317 from raw Fusion
+limits −30 to +22.6317 with the rack parked hard at +22.6317, assuming the whole
+slider span is reachable. If the real stroke is only the 30 mm below the park
+point, the measurement is the answer. The 57.0 is stale rather than a fourth
+independent number: those specs were written against the pre-sign-flip model and
+do not decode against the asset that ships today.
 
-Everything that commands `max_mm` directly is loaded against this: `demo`
-(`hand.config.upper`, all seven DOFs), the quickstart in `__init__.py`, a
-normalized action of `+1.0` through `denormalize`, and `caps_contact_based`'s
-lift to `cfg[Z].max_mm`.
+It cannot be measured by driving. A `travel` task tried, seeking the far stop and
+reporting the span, and the premise is false because there is no far stop to
+find. Run on `hand_2`, it took six of seven carriages off their rails. **Measure
+with calipers and type the numbers in.** `counts_per_mm` is hand-wide, so one
+axis calibrates all seven, while travel is per-DOF and each rail needs its own.
 
-Travel above or below one 4096-count revolution also decides whether stale zero
-offsets can be recovered arithmetically or the hand must be re-zeroed after
-every power cycle — see *Saved zero offsets go stale by whole turns* below. One
-turn is 50.27mm at the derived `counts_per_mm`, and `_reconcile_offsets` tests
-`(span < turn).all()`, so it is the *worst* DOF that decides for all seven. The
-jaws and z at 50mm come in at 0.99 turns, but the fingers at 55mm are 1.09, so
-the hand still lands in the branch that cannot recover. Bringing the fingers
-under 50.27 would buy it back. The old flat 60 was 1.19; DOF 0's measured 29.8mm
-would be 0.59.
+`tests/test_sim_real_contract.py` reads both sides live and asserts the recorded
+disagreement, so reconciling either one fails the test on purpose instead of
+going out of step quietly. The direction is not symmetric: **the sim narrows to
+the hardware, never the reverse.** `config` is narrower on all seven DOFs and
+must stay so, because the sim's extra stroke is not headroom, it is where a
+carriage leaves its slider.
 
-**Contact detection never detected contact.** `wait_for_stall` took its
-threshold as a distance per poll, defaulting to 0.5mm over a 0.05s poll. That is
-10mm/s. The fastest this hand moves is `speed=300`, which is 3.7mm/s, and
-`approach` creeps at 50, which is 0.61mm/s — so every DOF measured as stalled on
-the third poll, roughly 0.15s in, before it had gone anywhere.
+**The action offset disagrees, and it is worse than travel.** Scale already
+agrees, since both sides move half the travel per unit of action. The offset does
+not:
 
-`approach()` therefore returned the position it started from. Since
-`caps_contact_based` sizes its grip from that return value, every bottle and cap
-radius it has ever printed was the pre-probe jaw position, not a measurement.
-Contact-based sizing has never worked; it just never announced the failure.
+```
+sim    mm = default_joint_pos + 0.5*(hi-lo)*a     ->  a=0 is the REST pose
+real   mm = midpoint          + 0.5*(hi-lo)*a     ->  a=0 is MID-travel
+```
 
-Fixed by making the threshold a rate. Verified on `hand_2`: a jaw commanded from
-29.7mm to 12.0mm now reports 12.0, and closing to the hard stop reports 0.0.
-Both used to report 29.7.
-
-**Zeroing recorded hard stops in the middle of the rail on `hand_1`.** The
-counts-level variant `wait_for_stall_counts` had the same shape as the bug
-above, and a first pass only moved it inside its margin: counts/sec against a
-measured interval, thresholded at half the creep speed. That worked on `hand_2`
-and failed on `hand_1`, which is the stiffer of the two.
-
-The margin was never as wide as the numbers looked, because the encoder
-quantizes to whole counts. A poll of length `p` can only resolve speed in steps
-of `1/p`, so a 0.1s poll reads 0, 10, 20, 30 counts/sec and nothing between. A
-25 counts/sec threshold is two and a half of those steps wide: a DOF creeping at
-the commanded 50 counts/sec has to clear 3 counts per poll out of a 5-count
-budget, and any two polls that land on the same count read as stopped.
-`confirm_count=2` meant two such polls — 0.2s — were the whole confirmation.
-`hand_1` has more friction, so it creeps slower for the same command, and the
-budget goes to zero. Reproduced offline: at 22 counts/sec the old detector
-declares a hard stop on the second poll, 2 counts into travel.
-
-The fix is to measure net displacement over a whole window rather than a run of
-individually slow polls, and let the window carry the sensitivity. Over 1.0s a
-travelling DOF moves tens of counts while one against its stop dithers by one or
-two, so the threshold drops to 5 counts/sec and sits an order of magnitude clear
-of both. `--stall-speed` is the knob if a hand needs another number; the cost of
-the wider window is up to 2s of latency after the real stop, since it tumbles
-rather than slides.
-
-The mm variant `wait_for_stall` still has the un-widened form — 0.3mm/s on a
-0.05s poll, where one count is 0.0123mm, so about two quantization steps. Same
-shape, not yet hit, not changed here: contact detection stops against soft
-objects and the thresholds would want re-measuring against real grasps.
+Every MJCF `ctrlrange` starts at 0 and the constants file calls that pose "rest
+(jaws shut)", so `a = 0` shuts the jaws in sim and opens them 25 mm on hardware.
+The sim's whole negative action half is unused as well, since it clamps against a
+range starting at rest. `config`'s convention is the better one and is the one to
+keep, so the fix is one offset in the sim. No policy is trained on this hand yet,
+so reconciling costs nothing today and invalidates checkpoints after the first
+run. It is the cheapest it will ever be.
 
 **Saved zero offsets go stale by whole turns.** A servo reports (turns since
-power-up × `counts_per_rev`) + the angle within the current turn. The angle
-comes off a magnetic encoder and is right the instant power arrives; the turn
+power-up × `counts_per_rev`) plus the angle within the current turn. The angle
+comes off a magnetic encoder and is right the instant power arrives, but the turn
 count restarts at zero. So the reading a saved offset was measured against no
-longer exists, and every mm command after a power cycle is off by some whole
-number of turns — silently, because the numbers stay plausible.
+longer exists, and every millimetre command after a power cycle is off by some
+whole number of turns, without any warning, because the numbers stay plausible.
+Observed on `hand_2`: four DOFs read 30 mm and three read a turn away.
 
-Observed on `hand_2`: four DOFs read 30mm and three read a turn away, from
-offsets saved in the previous session.
-
-The angle alone places the joint exactly, provided travel is shorter than one
-turn — then only one reachable position matches it. `load_calibration` now
-recovers the offsets from that:
+The angle alone places the joint exactly *provided travel is shorter than one
+turn*, and then the offsets can be recovered by arithmetic:
 
 ```python
 k = ((raw - offsets) * orientation) % counts_per_rev
 rebased = raw - k * orientation
 ```
 
-Everything the turn counter contributed, to the reading and to the saved offset
-alike, is a multiple of a turn and drops out of the modulo. Arithmetic, not a
-fit: there are no candidates to score.
+**That recovery is not implemented in the current `config.load_offsets`**, which
+returns saved offsets without checking that the turn origin still holds. Even if
+it were, one motor turn is 50.27 mm at the derived `counts_per_mm` and the
+fingers are configured at 55, so the widest DOF would put all seven in the case
+that cannot be recovered. Getting every rail under 50.27 mm removes the ambiguity
+outright, which is the same calipers measurement the entry above wants.
 
-Past one turn of travel two real positions share an angle. The servo cannot tell
-them apart and neither can we, so that branch refuses and asks for zeroing.
-Which branch runs depends entirely on travel, and travel has never been
-measured. The test is `.all()`, so the widest DOF decides for the whole hand.
-The configured CAD figures put the jaws and z at 0.99 turns but the fingers at
-1.09, so offsets stay unrecoverable; the old flat 60 was 1.19 on all seven.
-Getting every rail under 50.27mm removes the ambiguity outright. Calipers decide
-it — the `travel` task that was meant to has been deleted, because there is no
-far stop for it to seek.
+**The left and right finger labels are unresolved.** The MJCF calls DOF index 1
+`m_right_down_finger`, while `config.LAYOUT` calls it the left one. The sim's
+names come from Fusion bodies cross-checked with the designer, so they are the
+better evidence, but neither source says which physical finger *servo* 1 drives,
+which is the only thing that matters here. It fails without any warning, since a
+mirrored policy still looks plausible on a symmetric gripper. Resolve it by
+commanding DOF 1 alone and watching which finger moves. `--swap` exchanges DOFs
+1 and 2, and 5 and 6, to test it.
 
-**A failed read used to decode into a plausible position.** `SCS::readWord`
-returns `-1` on any failure — no reply, wrong ID, bad length, CRC mismatch — and
-`HLSCL::ReadPos` then ran its sign-magnitude decode over that `-1`. Bit 15 is
-set, so the sign branch fired and the error came back out as **+32769 counts,
-about 402mm**. The sentinel and real data shared one channel.
+**`fingerprint()` has no callers.** It exists to catch the travel mismatch above.
+Recording it on whatever a twin produces, and rejecting a mismatch before driving
+hardware, is still to be connected up.
 
-Three guards were written against exactly this and were dead code, because the
-binding returned `int` and never `None`: `hand.py`'s `if counts is not None`,
-and both null-checks in `primitives.py`. Worst case, `wait_for_stall_counts`
-confirmed a stall over two polls, so three consecutive dropped frames read as
-movement 0 and would have registered a false hard stop at 32769 — saved as a
-zero offset. (Its window no longer treats a dropped read as a sample at all.)
-
-Fixed: the driver's reads now return `None` on failure, using `getLastError()`,
-which is the channel that was there all along. The vectorized `read_positions`
-is immune by construction, since sync-read reports a missing reply through
-`syncReadPacketRx`'s return rather than in-band. **This has been reproduced by
-arithmetic, not by a live dropped frame** — no read has been observed to fail on
-this bus.
-
-**`enable()` used to command every joint to 0mm.** The loop writes the whole
-target vector each step and `target` starts as zeros, so starting the loop drove
-the hand into its hard stops before any target was set. Commanding a subset is
-what exposed it: `set_pos({Z: 35.0})` leaves the other six "unchanged", and
-unchanged meant zero. Hit during this bring-up — six joints travelled from 29mm
-to their 0mm stops at torque 50. Fixed by seeding the target from the measured
-position in `enable()`.
-
-**Zeroing crept at a flat torque that was wrong for three DOFs.** Until this
-revision, `zeroing` used `zero_torque=50` for every DOF. Three of the seven need
-something different:
-
-- **Fingers (DOF 1, 2, 5, 6)** register a stall short of the end of travel at
-  50 and reach it at 30. Lower left finger (DOF 1) was the visible case: it
-  stalled around 644 counts at 50, and lands at −102/−108 (two runs) at 30,
-  roughly 9mm further into travel.
-- **Z stage (DOF 3)** stops in mid-air short of the stop at 50 and reaches it
-  at 150. Not the same number as `STANDARD_TORQUE[3] = 300`, which is the
-  torque needed to *lift* the stage; this is the seeking direction only.
-- **Jaws (DOF 0, 4)** were the only DOFs where flat-50 was right.
-
-The mechanism behind the finger numbers was never established — binding,
-stiction and stall-detector sensitivity all fit the observation.
-
-It was the stall detector. Every number above was bisected with the detector
-described two entries up, which scored a slow creep as a stop, so "stalls short
-at 50, reaches the end at 30" is as consistent with a false positive as with a
-mechanism that binds harder when pushed harder. The table has since been
-doubled to `[100, 60, 60, 300, 100, 60, 60]` to clear `hand_1`'s friction —
-one table for both hands, since a hard stop is the same physical feature on
-each and a second table is a second set of numbers to keep measured. Watch the
-first seek: the cost of raising creep torque is the force a DOF ends up
-pressing into a printed rack with. `--zero-torque N` broadcasts a flat value
-over the table.
-
-**The encoder turn-origin shift still stands.** A stored offset is not
-guaranteed to survive a power cycle: the encoder is absolute within one turn
-but the turn number is an accumulator, and a different power-up state lands
-at a different turn. `load_calibration()` sets `is_zeroed = True` from a stored
-file without checking the turn origin still holds, so a stale calibration
-could put a DOF 50mm out with no warning. Two safe moves: re-zero on every
-connect, or stamp a turn-origin sentinel into the calibration file and reject
-on mismatch. Not done.
-
-**Bisects on individual DOFs can mislead.** Calling `zeroing --dof N` from an
-arbitrary starting position can register a friction bind partway into the
-mechanism rather than the real hard stop. The full `zeroing` run drives every
-DOF from a known starting position and finds the true end of travel. Cross-
-check by running `--dof N` after the full zeroing has parked the hand at mid
-travel — the result should match. If it doesn't, the joint has multiple stops
-or the parallel-phase path is interacting with the mechanism.
+**Mechanical, not code: DOF 1 on `hand_2` binds.** At the start of the 2026-08-31
+session a 5 mm goal produced 0.09 mm of motion. Driving it ±400 counts a few
+times freed it, after which the identical command tracked to 4.99 mm. The symptom
+to recognise is full travel in one direction and about 20% in the other.
 
 **Two servo drivers.** `hardware_bindings/ft_servo/ft_servo_python_only.py`
-reimplements the same protocol as the compiled extension and now has no
-importers at all. See Layout above.
-
-**`set_position_offset` is not bound.** It exists in `ft_servo_python_only.py`
-but not in the C++ extension, so writing a servo's position offset to EPROM
-means dropping to the Python driver by hand.
+reimplements the same SCS wire protocol as the compiled extension, over
+`pyserial`, and now has no importers at all: 404 lines reachable only by typing
+its path. `set_position_offset` plus raw `unlock_eprom` and `lock_eprom` are the
+only things it can still do that the extension cannot. Either bind those three
+and delete the file, or keep it and accept that two drivers have to stay in
+agreement with nothing enforcing it.

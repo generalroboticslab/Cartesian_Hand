@@ -10,6 +10,16 @@ Two things can be written, matching the two things a person does:
     write_variant   keep the procedure, change the numbers   (tune)
     write_program   arrange rows into a new procedure        (combine)
 
+and one thing can be read back, which is what makes the studio's timeline an
+editor rather than only an author:
+
+    rows_from       a built program -> the rows that wrote it  (load)
+
+It reads the *built* program, never the source. Parsing would only ever
+understand the files this module emits -- the subset that needed no editor --
+and would be wrong about every hand-written task, whose goals are expressions
+over a `Config` rather than literals.
+
 Both produce a module under `tasks/`, which *is* the registration -- dispatch is
 `pkgutil` over file stems, so a written file is reachable as `--task <name>` with
 nothing else edited (see `tasks/__init__.py`).
@@ -34,7 +44,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .config import LABELS
-from .motions import FRAMES, PREDICATES, STOPS, When
+from .motions import FRAMES, PREDICATES, STOPS, TIMEOUT, WANTS, Motions, When
 
 # Where the studio's timeline puts the rows it is about to run. A real task file
 # under a reserved name, not a separate preview path, so what the timeline
@@ -91,6 +101,65 @@ class Row(NamedTuple):
                 raise ValueError(
                     f"predicate source DOF {self.when.dof} outside "
                     f"0..{len(LABELS) - 1}")
+
+
+# `WANTS` read backwards, for recovering a row's stop rule from the outcome code
+# it armed. `hold` is left out of the table on purpose: it and `wait` both arm
+# TIMEOUT, so the code alone cannot separate them, and what actually
+# distinguishes a hold is that `Step.set` gives it a one-tick budget instead of
+# the timeout it was asked for. `rows_from` reads the budget to decide.
+STOP_OF = {code: name for name, code in WANTS.items() if name != "hold"}
+PREDICATE_OF = {code: name for name, code in PREDICATES.items()}
+
+
+def rows_from(program: Motions) -> list[Row]:
+    """Recover a timeline from a built program. The inverse of `program_source`.
+
+    What makes the studio's timeline an editor rather than only an author: a
+    task is loaded by *building it and reading the cells back*, never by parsing
+    its source. A parser would understand only the subset of Python this module
+    happens to emit -- which is exactly the subset that already needed no editor
+    -- and would be wrong about every hand-written task, whose goals are
+    expressions over a `Config` rather than literals.
+
+    Reads env 0 only. Rows are authored per joint and broadcast across the
+    batch, so every env carries the same program unless a task varied it per
+    env, which a `Row` cannot express in either direction.
+
+    Joints acting identically at one step collapse back into a single row,
+    because that is how they were written -- `set(BASE_FINGERS, ...)` is one
+    call, not two. The grouping key is every field of `Row`, so joints differing
+    in any one of them stay separate rows.
+
+    **Lossy in one direction, deliberately.** Goals come back as the numbers the
+    task computed at build time, not as the `Config` fields that produced them,
+    and the millimetres of an `abs` row are relative to the pose the task was
+    built at. Loading a hand-written task therefore forks it into a flat program
+    rather than editing it in place -- which is what the timeline is, and why
+    the result has to be saved under a new name.
+    """
+    rows: list[Row] = []
+    for k in range(program.K):
+        groups: dict[tuple, list[int]] = {}
+        for j in range(program.acts.shape[1]):
+            if not bool(program.acts[0, j, k]):
+                continue
+            steps = int(program.timeout_steps[0, j, k])
+            code = int(program.wants[0, j, k])
+            kind = PREDICATE_OF[int(program.predicate_kind[0, j, k])]
+            key = (
+                float(program.goal_mm[0, j, k]),
+                float(program.torque[0, j, k]),
+                "hold" if code == TIMEOUT and steps <= 1 else STOP_OF[code],
+                steps / program.hz,
+                "here" if bool(program.relative[0, j, k]) else "abs",
+                None if kind == "always" else
+                When(kind, int(program.predicate_source[0, j, k]),
+                     float(program.predicate_threshold[0, j, k])),
+            )
+            groups.setdefault(key, []).append(j)
+        rows += [Row(tuple(dofs), *key) for key, dofs in groups.items()]
+    return rows
 
 
 def tasks_dir() -> Path:

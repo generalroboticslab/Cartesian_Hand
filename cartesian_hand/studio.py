@@ -31,14 +31,18 @@ This moves the hand.
   stroke can still run a carriage off its rail. Press **Zero hand** on the page
   first, or start near the closed end.
 * **Task goals are not clamped at all**, deliberately. See the command block.
+* **torque armed**, the page's first row, drops torque and stops commanding.
+  Unchecking it makes the hand limp -- a loaded z stage falls. Re-checking
+  writes the present pose before energizing, so the hand holds where you left
+  it rather than snapping back to the goal from before.
 
 Tasks
 -----
-The loop is an executor. A page button submits a task -- a generator of motion
-programs from `tasks/` -- and the loop ticks it in place of the sliders, one
-program at a time, still the only writer on the bus. Nothing is threaded and
-nothing takes the bus away, which is what lets the same task file run against
-mujoco under `sim.run` with this module not imported at all.
+The loop is an executor. A page button builds a controller from `tasks/` and
+ticks either its direct policy or its fixed motion program in place of the
+sliders, still as the only writer on the bus. Nothing is threaded and nothing
+takes the bus away, which is what lets the same task file run against MuJoCo
+under `sim.run` with this module not imported at all.
 
 Kinematic, not dynamic
 ----------------------
@@ -56,16 +60,21 @@ hand.
 What lives here
 ---------------
 `live` is the loop. `WebStudio` is both the renderer and the goal source: a
-viser page serving the model's ten visual meshes beside a panel of task
-buttons, one readout table, seven goal sliders, and a collapsed `tuning`
-folder holding speed, acc and the seven torques. `--studio False` falls back
-to mujoco's passive viewer.
+viser page serving the model's ten visual meshes between two windows. On the
+right, viser's own panel: the arm switch, one readout table, seven goal
+sliders, and a collapsed `tuning` folder of speed, acc and the seven torques.
+On the left, a floating **tasks** window -- the task buttons, the tune folder
+and the timeline -- which is one folder in that same panel, taken out of flow
+by `TASK_MENU_CSS`. `--studio False` falls back to mujoco's passive viewer.
 
-The panel is ordered by how often a thing is touched, and everything that is
-not touched during a run is either one line of text or behind the fold: the
+Two windows because the halves are used at different times and the left one is
+used *while watching the right*: `Run to row` is author, run, read the error,
+adjust. Tabs were tried first and put the timeline on the tab you cannot see.
+
+Everything not touched during a run is one line of text or behind a fold: the
 readout is a single markdown code block of seven aligned rows rather than
-seven components, and tuning is nine rows that are found once and then left.
-That is ~11 rows against the ~35 the panel opened with, with nothing removed.
+seven components, and tuning is nine rows found once and then left. That is
+~11 rows against the ~35 the panel opened with, nothing removed.
 
 The readout carries live millimetres, signed `err` and load as numbers rather
 than the two read-only bar rows it started as -- 14 rows, none of them
@@ -126,6 +135,7 @@ from .config import (AUX_FINGERS, AUX_JAW, BASE_FINGERS, BASE_JAW, CALIB_PATH,
                      DEFAULT_HAND, HANDS, LABELS, Z, HandConfig, get_hand,
                      identify, load_offsets, save_offsets)
 from .mjcf import MM_PER_M, mjcf_path, narrow_ctrlrange, qpos_addrs
+from .policy import Policy, PolicyRunner
 from .servo import open_driver
 from . import tasks
 
@@ -173,6 +183,44 @@ VISER_HOST = "0.0.0.0"
 CAMERA_POS = (0.22, -0.22, 0.16)
 CAMERA_LOOK_AT = (0.016, 0.0, 0.003)
 
+# The task menu is its own window on the left of the page, and this is the whole
+# mechanism: viser serves exactly one control panel (a `ThemeConfigurationMessage`
+# picks floating/collapsible/fixed for it and there is no message that opens a
+# second), so the folder is built in that panel like everything else and then
+# taken out of flow by CSS the page serves itself.
+#
+# Why bother: the panel had grown to the buttons, seven goal sliders, two
+# collapsed folders and a timeline, and the two halves are used at different
+# times -- a task owns every joint while it runs, so a goal slider is dead
+# furniture beside it. Tabs were tried first and are worse for the one case that
+# matters: watching the readout while a task runs means the timeline is on the
+# tab you cannot see, and `Run to row` is an author-run-adjust loop against a
+# number in the other half of the panel.
+#
+# **The selector is positional and will not survive a viser client rewrite.**
+# `add_html` renders inside `<div dangerouslySetInnerHTML>` (viser's Html.tsx),
+# so the marker sits five levels under the folder's `mantine-Paper-root`:
+# Paper > Collapse > pad > pad > html-div > marker. `:has()` walks back up. To
+# re-derive it after an upgrade, print the marker's ancestor chain -- that is
+# what `tests/test_web_studio.py::test_the_task_menu_is_a_window_on_the_left`
+# does in a real browser, and it fails rather than silently rendering the menu
+# back inside the right-hand panel.
+#
+# Style notes: `--mantine-color-body` rather than white, so dark mode follows;
+# z-index stays under viser's own notifications, which are also top-left and
+# will briefly sit on top of this (they are dismissable, and the only one that
+# fires unprompted is the software-WebGL warning).
+TASK_MENU_CLASS = "cartesian-hand-task-menu"
+TASK_MENU_CSS = f"""<style>
+.mantine-Paper-root:has(> div > div > div > div > .{TASK_MENU_CLASS}) {{
+  position: fixed; left: 1em; top: 1em; width: 24em;
+  max-height: calc(100vh - 2em); overflow-y: auto; z-index: 5;
+  background: var(--mantine-color-body);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  border-radius: 0.5em; padding: 0.5em 0.7em;
+}}
+</style><div class="{TASK_MENU_CLASS}"></div>"""
+
 # The MJCF puts visual geoms in group 2 and the 448 CoACD collision hulls in 0.
 # Building only group 2 is why the scene is ten meshes and not 458; MuJoCo's own
 # renderer excludes them the same way.
@@ -200,21 +248,34 @@ def wants_panel(panel: bool | None, windowed: bool, teach: bool,
 
 
 def submit(name: str, cfg: HandConfig,
-           measured_mm: torch.Tensor) -> motions.TaskRunner:
-    """Build the runner for a task button. `measured_mm` is [J], right now.
+           measured_mm: torch.Tensor) -> motions.TaskRunner | PolicyRunner:
+    """Build the named task's runner at the hand's current pose.
 
     The starting position is an argument rather than something the task reads,
     because a task has no way to read anything -- that is what makes it run on
     both backends. Zeroing needs it to set its first goals; the cap task does
     not, and asks for nothing.
 
-    `hold_torque` is the hand's configured torque, per DOF. It is what joints
-    the current program never mentions are commanded at, so it cannot be left
-    to default: the z stage at zero torque drops the aux gripper.
+    Direct tasks and fixed-program tasks share discovery and submission. Only
+    their runner differs. `hold_torque` seeds untouched joints in the legacy
+    runner; direct policies carry their own standing action.
     """
+    controller = tasks.make(name, cfg, measured_mm[None, :])
+    if isinstance(controller, Policy):
+        return PolicyRunner(controller, cfg.control_hz)
     return motions.TaskRunner(
-        tasks.make(name, cfg, measured_mm[None, :]),
+        controller,
         hold_torque=cfg.gain_vector("torque_min_to_move").to(torch.float32)[None, :])
+
+
+def report_task_rate(name: str, cfg: HandConfig, started_at: float,
+                     ticks: int) -> None:
+    """Report when tick deadlines and room time materially disagree."""
+    real_hz = ticks / max(time.time() - started_at, 1e-9)
+    if abs(real_hz - cfg.control_hz) > 0.1 * cfg.control_hz:
+        print(f"[{cfg.name}] {name}: control loop ran at {real_hz:.1f} Hz, "
+              f"not the configured {cfg.control_hz:.0f} Hz -- every task "
+              f"deadline is off by {cfg.control_hz / real_hz:.2f}x")
 
 
 def finish(name: str, runner: motions.TaskRunner, cfg: HandConfig,
@@ -325,6 +386,7 @@ def live(hand: str | None = None,
          seconds: float | None = None,
          goal_mm: Annotated[Callable | None, tyro.conf.Suppress] = None,
          external_signal: Annotated[Callable | None, tyro.conf.Suppress] = None,
+         policy: Annotated[Policy | None, tyro.conf.Suppress] = None,
          studio: bool | None = None,
          panel: bool | None = None,
          web_port: int = VISER_PORT,
@@ -378,6 +440,9 @@ def live(hand: str | None = None,
         goal_mm: callable `(measured_mm, load) -> [J] mm` replacing the sliders
             as the goal source. How the loop is exercised without a display, and
             the seam the control loop will command through. Not a CLI flag.
+        policy: typed direct policy submitted once for this run. It receives the
+            same batched tensor observation as simulation and owns goal, speed,
+            and effort until its state reports done. Not a CLI flag.
         studio: serve the viser page; False for the mujoco passive viewer. None
             follows `viewer` -- the page whenever there is a view at all.
         panel: the page's millimetre sliders drive the hand, as `goal_mm`. False
@@ -389,6 +454,10 @@ def live(hand: str | None = None,
             move a real hand and nothing authenticates them. `0.0.0.0` to view
             or drive from another machine.
     """
+    if policy is not None and (task is not None or goal_mm is not None or teach):
+        raise ValueError("policy conflicts with task, goal_mm, and teach")
+    if policy is not None and panel:
+        raise ValueError("policy conflicts with a commanding slider panel")
     if studio is None:
         studio = viewer
     path = mjcf_path(xml)
@@ -458,7 +527,8 @@ def live(hand: str | None = None,
         data.ctrl[:] = cfg.counts_to_mm(counts, zero).numpy() / MM_PER_M
 
     # `viewer` is read before the studio block below flips it.
-    sliders = wants_panel(panel, viewer or studio, teach, goal_mm)
+    sliders = (False if policy is not None else
+               wants_panel(panel, viewer or studio, teach, goal_mm))
     if sliders and teach:
         raise ValueError("--panel and --teach conflict: teach sends no goals")
 
@@ -486,13 +556,16 @@ def live(hand: str | None = None,
         ctx, report = _NoViewer(), _printer()
 
     t0 = time.time()
+    task_t0, task_ticks = t0, 0
     silent = 0
+    armed = not teach    # tracks the bus, so the page's switch is an edge
     want = None          # stays None under teach, which commands nothing
-    runner = running = None      # the task being executed, and its name
+    runner = PolicyRunner(policy, cfg.control_hz) if policy is not None else None
+    running = type(policy).__name__ if policy is not None else None
     # A `--task` is submitted exactly like a click, and the loop returns when it
     # finishes: with no page open there is nothing left to watch, and a headless
     # zeroing run that kept ticking would hold the hand until Ctrl-C.
-    pending, exit_when_done = task, task is not None
+    pending, exit_when_done = task, task is not None or policy is not None
     try:
         with ctx as view:
             while view.is_running():
@@ -504,8 +577,31 @@ def live(hand: str | None = None,
                 # First, so the servos are moving while the read that follows
                 # is on the wire. Free: a sync-write is a broadcast with no
                 # reply, so it returns as soon as it is queued.
-                if teach:
-                    want = None          # teach commands nothing
+                # The page's arm switch, applied on the edge only -- torque is a
+                # register, and re-sending it every tick is a packet per tick for
+                # a value that did not change. Re-arming repeats the startup
+                # order (write present position, then energize) because a servo
+                # snaps to whatever goal is still in its register, and the pose
+                # was posed by hand while it was limp. A running task is dropped
+                # rather than paused: it timed its rows against a hand that was
+                # moving, and resuming would replay stale deadlines.
+                arm = (not teach) and (web.armed if web else True)
+                if arm != armed:
+                    if arm:
+                        bus.set_positions(ids, counts.int().tolist(),
+                                          speed, acc, torque)
+                    bus.enable_torques(ids, arm)
+                    armed = arm
+                    print(f"[{cfg.name}] torque {'on' if arm else 'off'}")
+                    if arm and web:
+                        web.rebaseline(cfg.counts_to_mm(counts, zero).tolist())
+                    if not arm:
+                        runner, pending = None, None
+
+                if not armed:
+                    want = None          # disarmed: nothing is commanded
+                    if web:
+                        web.pending = None   # a click while limp is not a queue
                 else:
                     measured = cfg.counts_to_mm(counts, zero)
 
@@ -516,7 +612,8 @@ def live(hand: str | None = None,
                     # the first finished the hand would be somewhere the second
                     # was not submitted from.
                     if web and web.pending:
-                        pending = web.pending
+                        if runner is None:
+                            pending = web.pending
                         web.pending = None
                     if pending and runner is None:
                         runner, running = submit(pending, cfg, measured), pending
@@ -527,11 +624,20 @@ def live(hand: str | None = None,
                         task_ticks += 1
 
                     step = None
+                    direct_action = None
+                    direct_done = False
                     if runner is not None:
                         try:
                             external = (external_signal(measured[None, :], load[None, :])
                                         if external_signal else None)
-                            step = runner.tick(measured[None, :], external)
+                            if isinstance(runner, PolicyRunner):
+                                contact = (torch.as_tensor(external, dtype=torch.bool)
+                                           if external is not None else None)
+                                direct_action = runner.tick(
+                                    measured[None, :], contact)
+                                direct_done = runner.finished()
+                            else:
+                                step = runner.tick(measured[None, :], external)
                         except RuntimeError as e:
                             # NOT the path a failed task takes any more -- a DOF
                             # that never found its stop or a probe that closed on
@@ -546,32 +652,26 @@ def live(hand: str | None = None,
                             runner, failed = None, True
                         else:
                             failed = False
-                        if step is None and runner is not None:
-                            # Every deadline in the engine is counted in TICKS
-                            # and converted with `cfg.control_hz`, but nothing
-                            # here guarantees the loop achieved that rate: a tick
-                            # is seven bus round trips plus a render, and when
-                            # that overruns `period` the sleep is simply skipped.
-                            # A loop at half rate makes every `timeout_s` a task
-                            # wrote take twice as long in the room, and the
-                            # symptom is a hand standing still on a budget that
-                            # claims to be shorter than the wait.
-                            real_hz = task_ticks / max(time.time() - task_t0, 1e-9)
-                            if abs(real_hz - cfg.control_hz) > 0.1 * cfg.control_hz:
-                                print(f"[{cfg.name}] {running}: control loop ran at "
-                                      f"{real_hz:.1f} Hz, not the configured "
-                                      f"{cfg.control_hz:.0f} Hz -- every task "
-                                      f"deadline is off by "
-                                      f"{cfg.control_hz / real_hz:.2f}x")
+                        if (step is None and runner is not None
+                                and isinstance(runner, motions.TaskRunner)):
+                            report_task_rate(running, cfg, task_t0, task_ticks)
                             zero, done_ok = finish(running, runner, cfg, zero,
                                                    counts, web)
                             runner, failed = None, not done_ok
-                        if step is None and exit_when_done:
+                        if step is None and runner is None and exit_when_done:
                             if failed:
                                 raise RuntimeError(f"task {running!r} failed")
                             break
 
-                    if step is not None:
+                    if direct_action is not None:
+                        want = cfg.clamp(direct_action.goal_mm[0])
+                        speed_now = (direct_action.max_speed_mm_s[0]
+                                     * cfg.counts_per_mm).round().clamp_min(1)
+                        speed_now = speed_now.to(torch.int32).tolist()
+                        tq = (direct_action.effort_limit[0].clamp(0.0, 1.0)
+                              * 1000).round().to(torch.int32).tolist()
+                        _, acc_now, _ = gains()
+                    elif step is not None:
                         # A task's goals are NOT clamped to the travel table.
                         # Zeroing deliberately asks for 120mm on a 55mm rail so
                         # that the hard stop, not the number, ends the move --
@@ -584,7 +684,15 @@ def live(hand: str | None = None,
                         # makes is bounded at build time by `clamped_mm`. A
                         # slider is a human and gets clamped; a program is not.
                         want, tq = step[0][0], step[1][0].round().int().tolist()
+                        # Per-DOF speed from the row where it asked for one, the
+                        # page's gain where it did not (0). A seek and a park
+                        # want different speeds on the same joint, and before
+                        # `Motions` carried this the only place to say so was
+                        # `config.speed`, which also governs the sliders.
                         speed_now, acc_now, _ = gains()
+                        speed_now = [round(float(s) * cfg.counts_per_mm) if s > 0
+                                     else g
+                                     for s, g in zip(step[2][0].tolist(), speed_now)]
                     else:
                         want = (torch.as_tensor(goal_mm(measured, load),
                                                 dtype=torch.float32)
@@ -597,6 +705,32 @@ def live(hand: str | None = None,
                     bus.set_positions(ids, cfg.mm_to_counts(want, zero).tolist(),
                                       speed_now, acc_now, tq)
                     data.ctrl[:] = want.numpy() / MM_PER_M
+                    if web is not None and (direct_action is not None or step is not None):
+                        # A task's last commanded pose is the right next pose
+                        # too: nothing in the loop has said otherwise, the
+                        # sliders are still parked where the user clicked the
+                        # button, and falling back to them here snaps the hand
+                        # back to whatever they happened to be holding -- a
+                        # ready pose nothing in the task commanded. One copy
+                        # per tick a task runs, no websocket traffic unless
+                        # rebaseline's `.value = ...` actually changes it.
+                        web.rebaseline(want.tolist())
+                    if direct_done and runner is not None:
+                        report_task_rate(running, cfg, task_t0, task_ticks)
+                        failed = runner.failed()
+                        state = runner.state
+                        if failed:
+                            phase = getattr(state, "phase", None)
+                            detail = ("" if phase is None else
+                                      f" in phase(s) {phase.tolist()}")
+                            print(f"[{cfg.name}] {running}: failed{detail}")
+                        else:
+                            print(f"[{cfg.name}] {running}: done")
+                        runner = None
+                        if exit_when_done:
+                            if failed:
+                                raise RuntimeError(f"task {running!r} failed")
+                            break
 
                 # ---- measure ---------------------------------------------
                 reads = bus.read_all(ids)
@@ -695,6 +829,15 @@ class Composer:
     is the rollback marker -- you author the next row from the pose the previous
     ones actually produced, rather than from a number you predicted.
 
+    **Load task** fills the timeline from the task the tune dropdown names, so
+    an existing procedure can be opened and not only written. It reads the built
+    program rather than the source (`compose.rows_from`), which is what lets it
+    open a hand-written task whose goals are expressions rather than literals.
+    The two halves of the panel divide by what they can reach: tune moves the
+    numbers a task declared and keeps its structure, load reaches everything --
+    a row's joints, stop rule, frame and predicate -- and keeps nothing, since
+    what comes back is a flat program saved under a new name.
+
     Each row is one `motions.Step.set`. Runtime `When` predicates let each
     environment consume a source joint's previous stop outcome/position without
     changing program length or returning to Python. `stop="external"` accepts an
@@ -720,7 +863,8 @@ class Composer:
     """
 
     def __init__(self, server: "viser.ViserServer", cfg: HandConfig,
-                 run: Callable[[str], None] | None = None) -> None:
+                 run: Callable[[str], None] | None = None,
+                 pose: Callable[[], Sequence[float]] | None = None) -> None:
         """`run` submits a task name to the control loop; None disables Run to row.
 
         A callback rather than a reference to the page, so this panel keeps the
@@ -728,15 +872,30 @@ class Composer:
         cannot reach into the loop's state to find out what is running. The loop
         drops a submission that lands mid-task, which is the same rule the task
         buttons already live under.
+
+        `pose` is where the hand is, in mm, for building a task that is about to
+        be loaded into the timeline -- a callback for the same reason, and
+        defaulting to zeros so this panel still works with no hand behind it.
         """
         self.server, self.cfg, self.run = server, cfg, run
+        self.pose = pose or (lambda: [0.0] * cfg.n_dof)
         self.rows: list[compose.Row] = []
         self._knobs: dict[str, Any] = {}
 
-        with server.gui.add_folder("tune a task", expand_by_default=False):
+        # The folder is kept, not just entered: viser tracks the container per
+        # *thread*, so `_rebuild` -- which runs from a dropdown callback on
+        # viser's server thread -- would otherwise drop its rebuilt "numbers"
+        # folder at the top of the page instead of back inside this one.
+        self._tune = server.gui.add_folder("tune a task", expand_by_default=False)
+        with self._tune:
             self._task = server.gui.add_dropdown("task", tuple(tasks.names()))
             self._task.on_update(lambda _event: self._rebuild())
             self._knob_folder = server.gui.add_folder("numbers")
+            # Every rebuild re-declares this folder, and viser orders by when a
+            # component was declared, so without pinning the order the numbers
+            # walk to the bottom of the folder the first time the task changes.
+            self._knob_order = self._knob_folder.order
+            server.gui.add_button("Run tuned").on_click(self._run_tuned)
             self._variant_name = server.gui.add_text("save as", "")
             server.gui.add_button("Save variant").on_click(self._save_variant)
 
@@ -744,6 +903,7 @@ class Composer:
             self._table = server.gui.add_markdown("")
             self._cursor = server.gui.add_dropdown("row", (NO_ROWS,))
             self._cursor.on_update(lambda _event: self._select())
+            server.gui.add_button("Load task").on_click(self._load_task)
             server.gui.add_button("Run to row").on_click(self._run_to_row)
             self._group = server.gui.add_dropdown("joints", tuple(DOF_GROUPS))
             self._goal = server.gui.add_number("goal / distance mm", initial_value=0.0,
@@ -776,13 +936,18 @@ class Composer:
         """Replace the number widgets with the selected task's own tunables.
 
         Removed and rebuilt rather than hidden: the set of fields differs per
-        task (`zero` has 2, `cap` has 9) and viser has no way to re-label a
-        slider, so a pool of reused widgets would need its own mapping from
-        slot to field -- one more place for the panel and the task to disagree.
+        task (`zero` and `cap` expose different sets) and viser has no way to
+        re-label a slider, so a pool of reused widgets would need its own mapping
+        from slot to field -- one more place for the panel and task to disagree.
+
+        Rebuilt *inside* `self._tune`: this runs on viser's server thread when
+        the dropdown changes, and viser's container is per thread, so without
+        re-entering the folder the numbers reappear at the top of the page.
         """
         self._knob_folder.remove()
         self._knobs = {}
-        with self.server.gui.add_folder("numbers") as folder:
+        with self._tune, self.server.gui.add_folder(
+                "numbers", order=self._knob_order) as folder:
             for field, (value, lo, hi) in tasks.tunables(self._task.value).items():
                 self._knobs[field] = self.server.gui.add_slider(
                     field, lo, hi, (hi - lo) / 100.0, value)
@@ -801,10 +966,65 @@ class Composer:
         return {f: round(float(h.value), 4) for f, h in self._knobs.items()
                 if abs(h.value - shipped[f][0]) > 1e-9}
 
+    def _run_tuned(self, _event: object) -> None:
+        """Run the selected task with the sliders where they are. The tune
+        panel's verify step.
+
+        Dragging a number and then having to name and keep a file before the
+        hand would move it made every trial a permanent artifact: the point of
+        a knob is the one that did *not* work, and `tasks/` filled with them.
+
+        Runs the file, not the values -- same rule as **Run to row**. The
+        changed numbers go to `tasks/_preview.py` as a variant and that name is
+        submitted, so a tuned trial and the variant **Save variant** keeps are
+        the same kind of module, built by the same writer. It shares `_preview`
+        with the timeline because both are scratch: whichever ran last is what
+        that file means, which is already what its docstring promises.
+
+        Untouched sliders submit the task itself. `write_variant` refuses a
+        variant with no changes -- correctly, it would be a copy under another
+        name -- and the thing to run in that case is the parent.
+        """
+        if self.run is None:
+            self._status.content = "**nothing to run**"
+            return
+        name = self._task.value
+        if not (changed := self._changed()):
+            self.run(name)
+            self._status.content = f"running `{name}` with its shipped numbers"
+            return
+        path = self._write(lambda: compose.write_variant(
+            compose.PREVIEW, name, changed,
+            doc=f"{name}, tuned in the studio. Rewritten on every tuned run; "
+                f"**Save variant** under its own name to keep it.",
+            overwrite=True))
+        if path is not None:
+            self.run(compose.PREVIEW)
+            self._status.content = (
+                f"running `{name}` with {', '.join(sorted(changed))} changed "
+                f"(`{path.name}`)")
+
     def _save_variant(self, _event: object) -> None:
         self._saved(self._write(lambda: compose.write_variant(
             self._variant_name.value.strip(), self._task.value, self._changed(),
             doc=f"{self._task.value}, retuned in the studio.")))
+
+    def select(self, name: str) -> None:
+        """Point both halves of the panel at `name`. For the task buttons.
+
+        Clicking a task button and then finding the tune dropdown still on
+        whatever it opened with is how a knob gets dragged against one task and
+        run against another -- the two controls are a metre apart on the page
+        and nothing tied them together. The button is the statement of intent,
+        so it wins.
+
+        `_rebuild` is called rather than left to the dropdown's own callback:
+        viser does not promise one for a server-side write, and rebuilding
+        twice costs one folder swap and is otherwise invisible.
+        """
+        if name in self._task.options:
+            self._task.value = name
+            self._rebuild()
 
     # ── compose ───────────────────────────────────────────────────────────────
 
@@ -918,6 +1138,53 @@ class Composer:
             self._source.value = DOF_LABELS[row.when.dof]
             self._threshold.value = row.when.threshold_mm
 
+    def _load_task(self, _event: object) -> None:
+        """Load the task selected above into the timeline, as editable rows.
+
+        The half of "edit a task" that was missing: the timeline could author a
+        procedure and could not open one, so every existing task was readable
+        only as source and tunable only through the numbers it had thought to
+        declare. Loading is what lets a step's joints, stop rule, frame or
+        predicate be changed -- none of which is a `Config` field.
+
+        Reads the *built* program, not the file (`compose.rows_from`), so what
+        lands in the timeline is what would actually run. That is also why the
+        task is built at the hand's current pose: a `frame="abs"` goal a task
+        computes from where it started is only meaningful against that pose.
+
+        The tune dropdown chooses the task for both halves rather than this
+        folder carrying a second copy of it -- two dropdowns naming a task is
+        two things to keep in step, and the stale one is whichever is scrolled
+        off screen.
+
+        Two things cannot load, and both are reported rather than half-done:
+        a direct `Policy` has no steps to show, and only the *first* program of
+        a multi-program task exists before the task has run -- the rest are
+        built from measurements it has not taken yet.
+        """
+        name = self._task.value
+        try:
+            controller = tasks.make(
+                name, self.cfg,
+                torch.tensor([self.pose()], dtype=torch.float32))
+        except (KeyError, ValueError, RuntimeError) as e:
+            self._status.content = f"**{type(e).__name__}**: {e}"
+            return
+        if isinstance(controller, Policy):
+            self._status.content = (
+                f"`{name}` is a direct policy, not a step timeline -- there are "
+                f"no rows to load. Tune its numbers in **tune a task**.")
+            return
+        try:
+            self.rows = compose.rows_from(next(controller))
+        finally:
+            controller.close()
+        self._show_rows(0)
+        self._status.content = (
+            f"loaded {len(self.rows)} row(s) from `{name}` (its first program, "
+            f"built at the pose the hand is in now). **Save task file** under a "
+            f"new name -- this is a copy, not `{name}` itself.")
+
     def _run_to_row(self, _event: object) -> None:
         """Execute rows 0..cursor on the hand. The timeline's rollback marker.
 
@@ -988,6 +1255,14 @@ class WebStudio:
     `port`, no GL context in this process and no thread started here. Serves
     whether or not anything is connected, so a page can be opened, closed and
     reopened mid-session.
+
+    Two windows, not one panel. viser's own panel on the right holds the arm
+    switch, the readout, the goal sliders and tuning; everything task-shaped --
+    the buttons and the whole `Composer` -- goes in a folder that
+    `TASK_MENU_CSS` floats to the left of the page, so authoring a timeline and
+    watching the hand are side by side rather than one behind the other.
+    Watch-only (`sliders=False`) builds the left window and nothing else:
+    authoring a task file never needed permission to move the hand.
 
     Geometry is read **straight off the compiled `MjModel`** -- there is no
     importer and no second scene representation. Each visual geom contributes
@@ -1061,22 +1336,26 @@ class WebStudio:
         self._tick = 0
         self._every = max(1, round(cfg.control_hz / READOUT_HZ))
 
-        # Panel order, and it is the order of how often a thing is touched:
-        # task buttons, the whole readout in one block, seven goal sliders, and
-        # the tuning that is set once behind a collapsed folder. viser lays out
-        # in call order, so this listing *is* the layout.
+        # Panel layout, and viser lays out in call order, so this listing *is*
+        # the layout -- for the right-hand panel. The task folder at the end of
+        # this method is floated to the left of the window instead.
         #
-        # One markdown block, not one per DOF: seven separate components carry
-        # seven components' worth of padding for seven lines of text, and only
-        # the text was ever the measurement. Aligned in a code block they also
-        # read as columns -- see `report`.
-        if sliders:
-            self._add_task_buttons()
+        # First row on the page: the arm switch is the control you reach for
+        # while something is going wrong, and hunting for it under a fold is the
+        # time you do not have. Unchecked drops torque and stops commanding --
+        # see `live`, which owns the transition.
+        #
+        # One markdown block for the readout, not one per DOF: seven separate
+        # components carry seven components' worth of padding for seven lines of
+        # text, and only the text was ever the measurement. Aligned in a code
+        # block they also read as columns -- see `report`.
+        self._armed = self.server.gui.add_checkbox("torque armed", True)
         self._readout = self.server.gui.add_markdown("")
 
         lower, upper = cfg.lower().tolist(), cfg.upper().tolist()
         self._names = [f"{dof} {label}" for dof, label in enumerate(LABELS)]
         self._speeds, self._torques, self._goal = [], [], []
+
         if sliders:
             for dof in range(cfg.n_dof):
                 # Millimetres, and labelled with the DOF's job rather than an
@@ -1094,9 +1373,25 @@ class WebStudio:
                 self._goal.append(goal)
             self._add_tuning(cfg)
 
-        # Independent of command sliders. Watch-only mode still composes files;
-        # editing source never needs permission to move the connected hand.
-        self.composer = Composer(self.server, cfg, run=self._submit)
+        # Everything task-shaped in one folder, which `TASK_MENU_CSS` then lifts
+        # out of the right-hand panel into its own window on the left -- see the
+        # constant for how, and for what breaks it.
+        #
+        # Declared last and it does not matter: a fixed-position element is out
+        # of flow, so this folder's place in viser's call order never reaches the
+        # page. What does matter is that the marker is the folder's *first*
+        # child, which is what the selector keys on.
+        #
+        # The composer is independent of the command sliders. Watch-only mode
+        # still composes files; editing source never needs permission to move
+        # the connected hand -- which is why this window exists in both modes
+        # and the goal sliders do not.
+        with self.server.gui.add_folder("tasks"):
+            self.server.gui.add_html(TASK_MENU_CSS)
+            if sliders:
+                self._add_task_buttons()
+            self.composer = Composer(self.server, cfg, run=self._submit,
+                                     pose=lambda: self._want)
         self._quat = np.empty(4)
 
     def _add_tuning(self, cfg: HandConfig) -> None:
@@ -1147,8 +1442,8 @@ class WebStudio:
 
         The button writes a name into `pending` and returns immediately. It
         starts no thread, touches no bus, and cannot block viser's server
-        thread, because a task here is a generator of motion programs rather
-        than a function that drives hardware -- see `tasks/`.
+        thread, because a task returns a controller rather than driving hardware
+        itself -- see `tasks/`.
 
         The thread this replaced is worth naming, because the shape of it looks
         reasonable and is not. Running a task off-loop meant two writers on one
@@ -1157,13 +1452,27 @@ class WebStudio:
         different from "policy", and none of it can exist in sim. Submitting
         instead means the loop is the only writer at every instant, and the
         same task file runs unchanged under `sim.run`.
+
+        Called inside the `tasks` folder and with no folder of its own: that
+        folder is already the grouping, and it is the window `TASK_MENU_CSS`
+        floats to the left of the page.
         """
         for name, label in tasks.buttons():
             self.server.gui.add_button(label).on_click(self._submitter(name))
 
     def _submitter(self, name: str) -> Callable:
-        """One callback per button, closing over its own task name."""
-        return lambda _event: self._submit(name)
+        """One callback per button, closing over its own task name.
+
+        The button also points the composer at the task it ran, so the tune
+        panel's numbers are the ones belonging to what just moved. Here and not
+        in `_submit`, which the composer itself calls: a **Run to row** or a
+        tuned run submits `_preview`, and pointing the dropdown at that would
+        replace the task being tuned with the scratch copy of it.
+        """
+        def click(_event: object) -> None:
+            self._submit(name)
+            self.composer.select(name)
+        return click
 
     def _submit(self, name: str) -> None:
         """Ask the control loop to run task `name`. Also the composer's `run`.
@@ -1174,6 +1483,11 @@ class WebStudio:
         the loop reads it wins.
         """
         self.pending = name
+
+    @property
+    def armed(self) -> bool:
+        """Whether the page wants torque on. Read by the control loop each tick."""
+        return bool(self._armed.value)
 
     def gains(self) -> tuple[list[int], list[int], list[int]]:
         """`(speed, acc, torque)` for the next `set_positions`, live off the page.
@@ -1253,7 +1567,7 @@ class WebStudio:
         self._tick += 1
         if self._tick % self._every:
             return
-        got, l = mm.tolist(), load.tolist()
+        got, loads = mm.tolist(), load.tolist()
         w = want.tolist() if want is not None else None
         # 22 is the longest `self._names` entry ("3 vertical translation"); a
         # narrower field would not truncate it, it would shift that one row's
@@ -1265,7 +1579,7 @@ class WebStudio:
             rows.append(
                 f"{name:<22}{got[dof]:6.2f}"
                 + (f"{w[dof] - got[dof]:+7.2f}" if w is not None else f"{'--':>7}")
-                + f"{int(l[dof]):6d}{shown_temp:>5}")
+                + f"{int(loads[dof]):6d}{shown_temp:>5}")
         self._readout.content = "```\n" + "\n".join(rows) + "\n```"
 
     def push(self, data: mujoco.MjData) -> None:

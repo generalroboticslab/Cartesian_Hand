@@ -1,19 +1,20 @@
 """The other backend: run a task against mujoco instead of against servos.
 
     python -m cartesian_hand.sim --task zero
-    python -m cartesian_hand.sim --task cap --cap-radius 6.0
+    python -m cartesian_hand.sim --task cap
 
-Same task files as `studio.live`, not a port of them. That is the whole claim
-of this module and it is worth stating precisely: `tasks/zero.py` and
-`tasks/cap.py` import nothing from either backend, yield `Motions` programs,
-and receive millimetres. What differs between here and hardware is six lines --
-`mj_step` and a `qpos` read where the other has `set_positions` and `read_all`.
+Same task and direct-policy files as `studio.live`, not ports of them. Existing
+tasks yield `Motions` programs; a direct policy instead receives the canonical
+typed observation and returns goal, speed, and effort every tick. What differs
+between here and hardware is the adapter around either controller -- `mj_step`
+and a `qpos` read where the other has `set_positions` and `read_all`.
 
 Deliberately not covered
 ------------------------
-**Torque is dropped on the floor here.** `Motions` returns a per-joint torque
-every tick and this backend ignores it: the MJCF's actuators are `<position>`
-with a fixed `kp`, so there is no per-joint gain to write it into. Every
+**Effort is dropped on the floor here.** `Motions` torque and direct-policy
+`Action.effort_limit` both reach this adapter, which cannot apply either: the
+MJCF's actuators are `<position>` with a fixed `kp`, so there is no
+per-environment force cap to write. Every
 `stop="stuck"` in a task therefore fires against a joint limit rather than
 against a grip that yields at a tuned force. That is enough to prove a task
 runs, and not enough to transfer a *force*; the sim's own README calls its
@@ -49,6 +50,7 @@ from collections.abc import Callable
 from .config import DEFAULT_HAND, HandConfig, get_hand
 from .mjcf import MM_PER_M, mjcf_path, narrow_ctrlrange, qpos_addrs
 from .motions import Task, TaskRunner
+from .policy import Policy, PolicyRunner, PolicyState
 from . import tasks
 
 
@@ -89,12 +91,16 @@ def profile(goal_mm: torch.Tensor, position_mm: torch.Tensor,
     return position_mm + (goal_mm - position_mm).clamp(-limit_mm, limit_mm)
 
 
-def run(task: Task, cfg: HandConfig, xml: str | None = None, swap: bool = False,
+def run(controller: Task | Policy, cfg: HandConfig, xml: str | None = None,
+        swap: bool = False,
         max_seconds: float = 180.0, verbose: bool = True,
         external_signal: Callable[[mujoco.MjModel, mujoco.MjData],
                                   torch.Tensor | None] | None = None
-        ) -> torch.Tensor:
-    """Tick `task` to completion against mujoco. Returns the task's measurement.
+        ) -> torch.Tensor | PolicyState:
+    """Tick one task controller to completion against MuJoCo.
+
+    A legacy generator returns its measurement; a direct policy returns its
+    typed final state. Both are supplied in the same position.
 
     `max_seconds` is simulated time and is a backstop, not a schedule: a task
     that ends on its own stop conditions finishes long before it, and one that
@@ -118,20 +124,32 @@ def run(task: Task, cfg: HandConfig, xml: str | None = None, swap: bool = False,
 
     hz = cfg.control_hz
     substeps = max(1, round((1.0 / hz) / model.opt.timestep))
-    runner = TaskRunner(
-        task, hold_torque=cfg.gain_vector("torque_min_to_move").to(torch.float32)[None, :])
+    direct = (PolicyRunner(controller, hz)
+              if isinstance(controller, Policy) else None)
+    runner = (None if direct is not None else TaskRunner(
+        controller, hold_torque=cfg.gain_vector("torque_min_to_move")
+        .to(torch.float32)[None, :]))
 
     limit = step_limit_mm(cfg)
     for _ in range(int(max_seconds * hz)):
         mm = torch.from_numpy(data.qpos[lead] * MM_PER_M).float()[None, :]
         external = external_signal(model, data) if external_signal else None
-        step = runner.tick(mm, external)
-        if step is None:
-            break
+        if direct is not None:
+            if direct.finished():
+                break
+            contact = (torch.as_tensor(external, dtype=torch.bool)
+                       if external is not None else None)
+            action = direct.tick(mm, contact)
+            goal, tick_limit = action.goal_mm, action.max_speed_mm_s / hz
+        else:
+            step = runner.tick(mm, external)
+            if step is None:
+                break
+            goal, tick_limit = step[0], limit
         # mujoco clamps ctrl to the range `narrow_ctrlrange` just set, which is
         # what turns zeroing's deliberate 120mm overtravel into "drive to the
         # closed end and lean on it" rather than an unreachable goal.
-        data.ctrl[:] = profile(step[0], mm, limit)[0].numpy() / MM_PER_M
+        data.ctrl[:] = profile(goal, mm, tick_limit)[0].numpy() / MM_PER_M
         for _ in range(substeps):
             mujoco.mj_step(model, data)
     else:
@@ -141,19 +159,23 @@ def run(task: Task, cfg: HandConfig, xml: str | None = None, swap: bool = False,
     if verbose:
         pos = " ".join(f"{v:6.1f}" for v in data.qpos[lead] * MM_PER_M)
         print(f"[sim] finished at mm [{pos} ]")
+    if direct is not None:
+        if direct.failed():
+            raise RuntimeError("direct policy failed")
+        return direct.state
     value, ok, why = runner.result
     if not bool(ok.all()):
         raise RuntimeError(why)
     return value
 
 
-def run_warp(task: Task, cfg: HandConfig, xml: str | None = None,
+def run_warp(controller: Task | Policy, cfg: HandConfig, xml: str | None = None,
              swap: bool = False, max_seconds: float = 180.0,
              verbose: bool = True, n_envs: int = 1,
              device: str | torch.device = "cuda",
              external_signal: Callable[[object, object],
                                        torch.Tensor | None] | None = None
-             ) -> torch.Tensor:
+             ) -> torch.Tensor | PolicyState:
     """`run`, batched over `n_envs` on the GPU via `mujoco_warp`.
 
     Same contract as `run` and the same loop: read millimetres, tick the task,
@@ -188,8 +210,11 @@ def run_warp(task: Task, cfg: HandConfig, xml: str | None = None,
 
     hz = cfg.control_hz
     substeps = max(1, round((1.0 / hz) / model.opt.timestep))
-    runner = TaskRunner(task, hold_torque=cfg.gain_vector("torque_min_to_move")
-                        .to(device=device, dtype=torch.float32)[None, :])
+    direct = (PolicyRunner(controller, hz)
+              if isinstance(controller, Policy) else None)
+    runner = (None if direct is not None else TaskRunner(
+        controller, hold_torque=cfg.gain_vector("torque_min_to_move")
+        .to(device=device, dtype=torch.float32)[None, :]))
 
     # Warm up to compile the kernels, then rewind: that first step advanced the
     # sim, and the task's first measurement must be the rest pose.
@@ -205,10 +230,19 @@ def run_warp(task: Task, cfg: HandConfig, xml: str | None = None,
     for _ in range(int(max_seconds * hz)):
         mm = qpos[:, lead] * MM_PER_M
         external = external_signal(m, d) if external_signal else None
-        step = runner.tick(mm, external)
-        if step is None:
-            break
-        ctrl[:] = profile(step[0], mm, limit) / MM_PER_M
+        if direct is not None:
+            if direct.finished():
+                break
+            contact = (torch.as_tensor(external, dtype=torch.bool, device=mm.device)
+                       if external is not None else None)
+            action = direct.tick(mm, contact)
+            goal, tick_limit = action.goal_mm, action.max_speed_mm_s / hz
+        else:
+            step = runner.tick(mm, external)
+            if step is None:
+                break
+            goal, tick_limit = step[0], limit
+        ctrl[:] = profile(goal, mm, tick_limit) / MM_PER_M
         wp.capture_launch(graph)
     else:
         raise RuntimeError(
@@ -217,6 +251,10 @@ def run_warp(task: Task, cfg: HandConfig, xml: str | None = None,
     if verbose:
         pos = " ".join(f"{v:6.1f}" for v in (qpos[0, lead] * MM_PER_M).tolist())
         print(f"[sim] {n_envs} env(s) finished, env 0 at mm [{pos} ]")
+    if direct is not None:
+        if direct.failed():
+            raise RuntimeError("direct policy failed")
+        return direct.state
     value, ok, why = runner.result
     if not bool(ok.all()):
         raise RuntimeError(why)
@@ -227,7 +265,6 @@ def main(task: str = "zero",
          hand: str = DEFAULT_HAND,
          xml: str | None = None,
          swap: bool = False,
-         cap_radius: float | None = None,
          max_seconds: float = 180.0,
          n_envs: int = 1,
          warp: bool = False) -> None:
@@ -239,10 +276,6 @@ def main(task: str = "zero",
         hand: which entry in `config.HANDS` supplies travel and control rate.
         xml: MJCF path. Default $CARTESIAN_HAND_MJCF, then the sibling checkout.
         swap: exchange finger DOFs 1<->2 and 5<->6.
-        cap_radius: skip the cap task's probe and use this radius, in mm. The
-            shipped model has no bottle in it, so without this the probe closes
-            on nothing and the task refuses to continue -- which is the check
-            working, not a failure to work around.
         max_seconds: simulated-time backstop.
         n_envs: how many worlds to simulate. Above 1 implies --warp.
         warp: use the GPU `mujoco_warp` backend instead of CPU mujoco.
@@ -254,12 +287,18 @@ def main(task: str = "zero",
     # on the GPU is what keeps the whole tick off the host.
     device = "cuda" if warp else "cpu"
     start = torch.zeros(n_envs, cfg.n_dof, device=device)
-    gen = tasks.make(task, cfg, start, cap_radius=cap_radius)
-    result = (run_warp(gen, cfg, xml=xml, swap=swap, max_seconds=max_seconds,
+    controller = tasks.make(task, cfg, start)
+    result = (run_warp(controller, cfg, xml=xml, swap=swap,
+                       max_seconds=max_seconds,
                        n_envs=n_envs, device=device) if warp else
-              run(gen, cfg, xml=xml, swap=swap, max_seconds=max_seconds))
-    print(f"[sim] {task}: {[round(float(v), 2) for v in result[0].flatten()]}"
-          if result.ndim > 1 else f"[sim] {task}: {result.tolist()}")
+              run(controller, cfg, xml=xml, swap=swap,
+                  max_seconds=max_seconds))
+    if isinstance(controller, Policy):
+        print(f"[sim] {task}: done={result.done.tolist()}, "
+              f"failed={result.failed.tolist()}")
+    else:
+        print(f"[sim] {task}: {[round(float(v), 2) for v in result[0].flatten()]}"
+              if result.ndim > 1 else f"[sim] {task}: {result.tolist()}")
 
 
 if __name__ == "__main__":
