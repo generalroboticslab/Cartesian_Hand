@@ -134,9 +134,10 @@ class TwistPress:
 
     A bulb going back into its socket and a screw being driven in engage by
     depth as well as rotation, so the stroke presses `dof` to `goal_mm` after
-    the re-grip, keeps it there through the turn, and backs off to
-    `return_mm` before the next stroke releases. `active` is per environment,
-    so one batch may thread and unthread at once.
+    the re-grip, keeps it there through the turn, releases the jaw, and only
+    then backs off to `return_mm` -- backing off before the jaw opens would
+    lift the object it just drove in right back out. `active` is per
+    environment, so one batch may thread and unthread at once.
 
     `return_effort` is separate from `effort` because backing off raises the
     stage against gravity, and z torque is directional: the validated
@@ -154,7 +155,7 @@ class TwistPress:
 
 
 (RELEASE, RESET_FINGERS, SETTLE_FINGERS, REGRIP,
- PRESS, TURN, RETRACT, STROKE_DONE) = range(8)
+ PRESS, TURN, RELEASE_BEFORE_RETRACT, RETRACT, STROKE_DONE) = range(9)
 
 STUCK_SPEED_MM_S = 0.3
 """Below this a joint counts as not moving. One servo step at the slowest
@@ -376,11 +377,13 @@ def twist_stroke(
     which finishes the turn, so a stroke and its mirror are one call with a
     tensor rather than two state machines -- `bulb` unscrews and re-threads in
     a single task. ``press`` optionally drives a third axis to depth after the
-    re-grip and holds it through the turn; see `TwistPress`.
+    re-grip and holds it through the turn, then opens the jaw before backing
+    the axis off; see `TwistPress`.
 
-    Environments that do not press skip both press phases on the transition
-    itself, not by passing through them, so a stroke without a press costs
-    exactly the ticks it did before this parameter existed.
+    Environments that do not press skip the press, the jaw-release before
+    retract, and the retract itself on the transition out of TURN, not by
+    passing through them, so a stroke without a press costs exactly the ticks
+    it did before this parameter existed.
     """
     n, joints = observation.position_mm.shape
     _check_twist_inputs(state, active, radius_mm, parameters, n, joints)
@@ -449,15 +452,23 @@ def twist_stroke(
     at_regrip = active & (phase == REGRIP)
     at_press = active & (phase == PRESS)
     at_turn = active & (phase == TURN)
+    at_release_before_retract = active & (phase == RELEASE_BEFORE_RETRACT)
     at_retract = active & (phase == RETRACT)
+    # Both open the jaw to the same clearance by the same rule; only what
+    # comes next differs (RESET_FINGERS vs. RETRACT), so one `move_to` call
+    # serves both.
+    releasing = at_release | at_release_before_retract
 
-    # The jaw must reach its release clearance before the fingers reset;
-    # accepting a short stall here can drag the object backwards. Do not reject
-    # one either: a loaded servo may need longer than the 0.2 s contact window
-    # to start moving, so give it the normal travel deadline. PRESS, TURN and
-    # RETRACT push against the object, so a stop is an arrival for them.
+    # The jaw must reach its release clearance before the fingers reset --
+    # and, for a pressing stroke, before RETRACT lifts the press axis, or the
+    # still-gripped jaw drags the just-driven object back out with it.
+    # Accepting a short stall here can drag the object backwards, so don't.
+    # Do not reject one either: a loaded servo may need longer than the 0.2 s
+    # contact window to start moving, so give it the normal travel deadline.
+    # PRESS, TURN and RETRACT push against the object, so a stop is an
+    # arrival for them.
     action, primitive, release = move_to(
-        observation, action, primitive, at_release & ~state.done,
+        observation, action, primitive, releasing & ~state.done,
         jaw, release_goal, travel_speed, loaded_effort,
         parameters.travel_timeout_ticks, stuck_speed_mm_s=0.0)
     action, primitive, reset = move_to(
@@ -481,7 +492,9 @@ def twist_stroke(
         press_dofs, return_goal, travel_speed, return_effort,
         parameters.travel_timeout_ticks, stall_fallback=stall_fallback)
 
-    release_ok = at_release & release.succeeded
+    release_ok = releasing & release.succeeded
+    release_ok_initial = at_release & release.succeeded
+    release_ok_before_retract = at_release_before_retract & release.succeeded
     reset_ok = at_reset & reset.succeeded
     # Position tolerance ends RESET_FINGERS, but the servo may still be moving
     # through its last fraction of a millimetre. Keep the jaw open until both
@@ -505,32 +518,35 @@ def twist_stroke(
     action = hold(action, grip_ok, jaw, grip_goal, grip_speed, grip_effort)
     transitioned = (release_ok | reset_ok | settle_ok | grip_ok | press_ok
                     | turn_ok | retract_ok)
-    failed_now = ((at_release & release.timed_out)
+    failed_now = ((releasing & release.timed_out)
                   | (at_reset & reset.timed_out)
                   | settle_timed_out
                   | (at_regrip & grip.timed_out)
                   | (at_press & presses & pressed.timed_out)
                   | (at_turn & turn.timed_out)
                   | (at_retract & presses & retracted.timed_out))
-    # Four phases, not six: the two z press phases are *meant* to reach their
-    # goal without touching anything, so the reached-without-contact verdict
-    # would fail every stroke that presses.
-    rejected_now = ((at_release & release.reached_goal_without_contact)
+    # Five phases, not seven: the two z press phases (PRESS, RETRACT) are
+    # *meant* to reach their goal without touching anything, so the
+    # reached-without-contact verdict would fail every stroke that presses.
+    rejected_now = ((releasing & release.reached_goal_without_contact)
                     | (at_reset & reset.reached_goal_without_contact)
                     | (at_regrip & grip.reached_goal_without_contact)
                     | (at_turn & turn.reached_goal_without_contact))
 
-    # An environment with no press jumps both z phases on the transition
-    # itself rather than spending a tick idling in each, so a stroke without a
-    # press issues exactly the actions it did before `press` existed.
-    next_phase = torch.where(release_ok, RESET_FINGERS, phase)
+    # An environment with no press jumps both z phases -- and the jaw release
+    # between them -- on the transition itself rather than spending a tick
+    # idling in each, so a stroke without a press issues exactly the actions
+    # it did before `press` existed.
+    next_phase = torch.where(release_ok_initial, RESET_FINGERS, phase)
     next_phase = torch.where(reset_ok, SETTLE_FINGERS, next_phase)
     next_phase = torch.where(settle_ok, REGRIP, next_phase)
     next_phase = torch.where(
         grip_ok, torch.where(presses, PRESS, TURN), next_phase)
     next_phase = torch.where(press_ok, TURN, next_phase)
     next_phase = torch.where(
-        turn_ok, torch.where(presses, RETRACT, STROKE_DONE), next_phase)
+        turn_ok, torch.where(presses, RELEASE_BEFORE_RETRACT, STROKE_DONE),
+        next_phase)
+    next_phase = torch.where(release_ok_before_retract, RETRACT, next_phase)
     next_phase = torch.where(retract_ok, STROKE_DONE, next_phase)
     finished = retract_ok | (turn_ok & ~presses)
     gripped_at = torch.where(

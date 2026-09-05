@@ -217,21 +217,81 @@ TASK_MENU_CLASS = "cartesian-hand-task-menu"
 CAMERA_CLASS = "cartesian-hand-camera"
 
 
-def window_css(class_name: str, placement: str) -> str:
+# `add_html` lands inside React's `dangerouslySetInnerHTML`, which never runs a
+# `<script>` tag -- the browser treats it as inert markup, not code. An
+# `onerror` attribute is not subject to that: it is parsed as a real event
+# handler the moment the element is inserted, so a deliberately-broken `<img>`
+# is the standard way to get one script tick out of injected HTML. It runs
+# once, finds the marker `previousElementSibling` places right before it, and
+# walks up to the same `.mantine-Paper-root` `window_css` floats -- so it never
+# needs its own copy of that selector.
+#
+# Drag-vs-click is a 3px move threshold rather than excluding click targets:
+# a plain click still reaches the folder's collapse toggle unchanged because
+# the handler never calls `preventDefault`/`stopPropagation` until the pointer
+# has actually moved, so the toggle's own click behaviour fires as if this
+# listener were not here.
+DRAG_SCRIPT = """<img src="x" style="display:none" onerror="
+(function(img) {
+  var marker = img.previousElementSibling;
+  var paper = marker && marker.closest('.mantine-Paper-root');
+  if (!paper || paper.dataset.chDraggable) return;
+  paper.dataset.chDraggable = '1';
+  var dragging = false, moved = false, startX = 0, startY = 0, offX = 0, offY = 0;
+  paper.addEventListener('mousedown', function(e) {
+    dragging = true; moved = false;
+    startX = e.clientX; startY = e.clientY;
+    var rect = paper.getBoundingClientRect();
+    offX = e.clientX - rect.left; offY = e.clientY - rect.top;
+  });
+  window.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    if (Math.abs(e.clientX - startX) > 3 || Math.abs(e.clientY - startY) > 3) moved = true;
+    if (!moved) return;
+    paper.style.left = (e.clientX - offX) + 'px';
+    paper.style.top = (e.clientY - offY) + 'px';
+    paper.style.right = 'auto';
+    paper.style.bottom = 'auto';
+    e.preventDefault();
+  });
+  window.addEventListener('mouseup', function() { dragging = false; });
+})(this);
+">"""
+
+
+def window_css(class_name: str, placement: str, draggable: bool = False) -> str:
     """The style and the marker that float one gui folder into its own window.
 
     A function, not two copies of the same rule, because the selector is the
     fragile part: it is positional, and re-deriving it after a viser upgrade
-    should be one edit rather than one per window.
+    should be one edit rather than one per window. `draggable` appends
+    `DRAG_SCRIPT` so the window can be picked up and moved instead of staying
+    pinned at `placement`.
+
+    The folder's own header -- title and collapse chevron, the Paper's first
+    child -- carries a `translateY(-10px)` from viser (built for the sticky
+    header it is when the folder sits in its native scrolling panel). In this
+    Paper's normal home that offset lands inside the panel's own overflow, so
+    it is invisible; here it pokes the header 10px above the box, and as soon
+    as this same rule's `overflow` is anything but `visible` -- true for the
+    task menu's `overflow-y: auto` and the camera's `resize` -- that overhang
+    gets clipped, chopping the tops off both windows' title letters. Canceling
+    the transform is the fix, not padding it out: the offset is fixed pixels
+    unrelated to this box's own (also custom) padding, so no padding value
+    cancels it for both windows at once.
     """
-    return f"""<style>
+    style = f"""<style>
 .mantine-Paper-root:has(> div > div > div > div > .{class_name}) {{
   position: fixed; {placement}
   background: var(--mantine-color-body);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
   border-radius: 0.5em; padding: 0.5em 0.7em;
 }}
+.mantine-Paper-root:has(> div > div > div > div > .{class_name}) > div:first-child {{
+  transform: none !important;
+}}
 </style><div class="{class_name}"></div>"""
+    return style + DRAG_SCRIPT if draggable else style
 
 
 TASK_MENU_CSS = window_css(
@@ -242,9 +302,19 @@ TASK_MENU_CSS = window_css(
 # Bottom left, and above the task menu, because the task menu may grow to the
 # full height of the window: the two overlap only when a long timeline is open,
 # and when they do the camera is the one you are looking at (the menu scrolls).
-# Not the right side -- viser's own panel is fixed there.
+# Not the right side -- viser's own panel is fixed there. Draggable so it can
+# be moved out from behind the task menu instead of only ever sitting here.
+#
+# `resize: horizontal` needs `overflow` off `visible` to draw its handle --
+# that is the only reason `overflow: auto` is here, not because this folder's
+# content is expected to overflow. The video itself never needs its own resize
+# logic: viser's `<img>` is already `max-width: 100%; height: auto`, so it
+# rescales to whatever width the handle leaves it, aspect ratio intact.
 CAMERA_CSS = window_css(
-    CAMERA_CLASS, "left: 1em; bottom: 1em; width: 24em; z-index: 6;")
+    CAMERA_CLASS,
+    "left: 1em; bottom: 1em; width: 24em; z-index: 6;"
+    " resize: horizontal; overflow: auto; min-width: 12em; max-width: 90vw;",
+    draggable=True)
 
 # The MJCF puts visual geoms in group 2 and the 448 CoACD collision hulls in 0.
 # Building only group 2 is why the scene is ten meshes and not 458; MuJoCo's own
