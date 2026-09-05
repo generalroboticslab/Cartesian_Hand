@@ -853,14 +853,15 @@ cartesian_hand/
                  no port, no threads, no I/O beyond JSON, so a twin can import it
   motions.py     the engine (Motions, Move, Program) plus TaskRunner
   policy.py      typed Observation, Action, Policy protocol, and PolicyRunner
-  primitives.py  legacy Step helpers plus direct closed-loop primitives
+  primitives.py  the tilt Step helper plus the direct closed-loop primitives,
+                 the rows, and the Sequence that walks them
   tasks/         one file per task; the file stem is the --task name. A direct
-                 task holds its human-scale Config, its build(), and its tensor
-                 state machine in that one file -- the machine below a
-                 `# -- policy --` divider. They were split across a
-                 <name>_policy.py at package root until 2026-09-04; six
-                 near-identical controllers in six files is how one deadline
-                 bug got copy-pasted into all of them
+                 task is two things and no more: a human-scale Config, and a
+                 build() returning its row list. The state machine is Sequence's
+                 and lives in primitives.py, so there is one of it rather than
+                 one per task -- they were six near-identical controllers in six
+                 <name>_policy.py files until 2026-09-04, which is how one
+                 deadline bug got copy-pasted into all of them
     zero.py      find every hard stop, report it as the hand's zero
     ready.py     send every DOF to mid travel; the studio's Reset button
     cap.py       probe, strokes, extract, re-thread. A bottle cap
