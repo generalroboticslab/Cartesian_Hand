@@ -440,44 +440,49 @@ def twist_stroke(
         torch.zeros_like(state.done), torch.zeros_like(state.failed))
     phase = state.phase
 
+    # One mask per phase, named once. `presses` is deliberately NOT folded in:
+    # the two z phases gate their move and their timeout on it but their
+    # success flag on the phase alone, and collapsing that distinction here
+    # would quietly change which envs can retire.
+    at_release = active & (phase == RELEASE)
+    at_reset = active & (phase == RESET_FINGERS)
+    at_regrip = active & (phase == REGRIP)
+    at_press = active & (phase == PRESS)
+    at_turn = active & (phase == TURN)
+    at_retract = active & (phase == RETRACT)
+
     # The jaw must reach its release clearance before the fingers reset;
     # accepting a short stall here can drag the object backwards. Do not reject
     # one either: a loaded servo may need longer than the 0.2 s contact window
     # to start moving, so give it the normal travel deadline. PRESS, TURN and
     # RETRACT push against the object, so a stop is an arrival for them.
     action, primitive, release = move_to(
-        observation, action, primitive,
-        active & (phase == RELEASE) & ~state.done,
+        observation, action, primitive, at_release & ~state.done,
         jaw, release_goal, travel_speed, loaded_effort,
         parameters.travel_timeout_ticks, stuck_speed_mm_s=0.0)
     action, primitive, reset = move_to(
-        observation, action, primitive,
-        active & (phase == RESET_FINGERS) & ~state.done,
+        observation, action, primitive, at_reset & ~state.done,
         fingers, reset_goal, travel_speed, travel_effort,
         parameters.travel_timeout_ticks)
     action, primitive, grip = close_until_contact(
-        observation, action, primitive,
-        active & (phase == REGRIP) & ~state.done,
+        observation, action, primitive, at_regrip & ~state.done,
         jaw, grip_goal, grip_speed, contact_effort,
         parameters.contact_timeout_ticks, stall_fallback=stall_fallback)
     action, primitive, pressed = move_to(
-        observation, action, primitive,
-        active & (phase == PRESS) & presses & ~state.done,
+        observation, action, primitive, at_press & presses & ~state.done,
         press_dofs, press_goal, travel_speed, press_effort,
         parameters.travel_timeout_ticks, stall_fallback=stall_fallback)
     action, primitive, turn = move_to(
-        observation, action, primitive,
-        active & (phase == TURN) & ~state.done,
+        observation, action, primitive, at_turn & ~state.done,
         fingers, turn_goal, travel_speed, turn_effort,
         parameters.travel_timeout_ticks, stall_fallback=stall_fallback)
     action, primitive, retracted = move_to(
-        observation, action, primitive,
-        active & (phase == RETRACT) & presses & ~state.done,
+        observation, action, primitive, at_retract & presses & ~state.done,
         press_dofs, return_goal, travel_speed, return_effort,
         parameters.travel_timeout_ticks, stall_fallback=stall_fallback)
 
-    release_ok = active & (phase == RELEASE) & release.succeeded
-    reset_ok = active & (phase == RESET_FINGERS) & reset.succeeded
+    release_ok = at_release & release.succeeded
+    reset_ok = at_reset & reset.succeeded
     # Position tolerance ends RESET_FINGERS, but the servo may still be moving
     # through its last fraction of a millimetre. Keep the jaw open until both
     # measured finger velocities have settled, then re-grip on the next tick.
@@ -490,31 +495,30 @@ def twist_stroke(
     settle_timed_out = (settling & ~settle_ok
                         & (settle_elapsed >= parameters.travel_timeout_ticks))
     primitive = replace(primitive, elapsed_ticks=settle_elapsed)
-    grip_ok = active & (phase == REGRIP) & grip.succeeded
-    press_ok = active & (phase == PRESS) & pressed.succeeded
-    turn_ok = active & (phase == TURN) & turn.succeeded
+    grip_ok = at_regrip & grip.succeeded
+    press_ok = at_press & pressed.succeeded
+    turn_ok = at_turn & turn.succeeded
     turn_reached = (((observation.position_mm - turn_goal).abs() <= 1.0)
                     | ~fingers[None, :]).all(dim=1)
     turn_stalled = state.turn_stalled | (turn_ok & ~turn_reached)
-    retract_ok = active & (phase == RETRACT) & retracted.succeeded
+    retract_ok = at_retract & retracted.succeeded
     action = hold(action, grip_ok, jaw, grip_goal, grip_speed, grip_effort)
     transitioned = (release_ok | reset_ok | settle_ok | grip_ok | press_ok
                     | turn_ok | retract_ok)
-    failed_now = ((active & (phase == RELEASE) & release.timed_out)
-                  | (active & (phase == RESET_FINGERS) & reset.timed_out)
+    failed_now = ((at_release & release.timed_out)
+                  | (at_reset & reset.timed_out)
                   | settle_timed_out
-                  | (active & (phase == REGRIP) & grip.timed_out)
-                  | (active & (phase == PRESS) & presses & pressed.timed_out)
-                  | (active & (phase == TURN) & turn.timed_out)
-                  | (active & (phase == RETRACT) & presses
-                     & retracted.timed_out))
-    rejected_now = (
-        (active & (phase == RELEASE) & release.reached_goal_without_contact)
-        | (active & (phase == RESET_FINGERS)
-           & reset.reached_goal_without_contact)
-        | (active & (phase == REGRIP)
-           & grip.reached_goal_without_contact)
-        | (active & (phase == TURN) & turn.reached_goal_without_contact))
+                  | (at_regrip & grip.timed_out)
+                  | (at_press & presses & pressed.timed_out)
+                  | (at_turn & turn.timed_out)
+                  | (at_retract & presses & retracted.timed_out))
+    # Four phases, not six: the two z press phases are *meant* to reach their
+    # goal without touching anything, so the reached-without-contact verdict
+    # would fail every stroke that presses.
+    rejected_now = ((at_release & release.reached_goal_without_contact)
+                    | (at_reset & reset.reached_goal_without_contact)
+                    | (at_regrip & grip.reached_goal_without_contact)
+                    | (at_turn & turn.reached_goal_without_contact))
 
     # An environment with no press jumps both z phases on the transition
     # itself rather than spending a tick idling in each, so a stroke without a
