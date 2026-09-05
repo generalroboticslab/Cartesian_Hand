@@ -65,7 +65,9 @@ right, viser's own panel: the arm switch, one readout table, seven goal
 sliders, and a collapsed `tuning` folder of speed, acc and the seven torques.
 On the left, a floating **tasks** window -- the task buttons, the tune folder
 and the timeline -- which is one folder in that same panel, taken out of flow
-by `TASK_MENU_CSS`. `--studio False` falls back to mujoco's passive viewer.
+by `TASK_MENU_CSS`, and under it a **camera** window floated the same way and
+fed by `camera.CameraStream`'s own thread. `--studio False` falls back to
+mujoco's passive viewer.
 
 Two windows because the halves are used at different times and the left one is
 used *while watching the right*: `Run to row` is author, run, read the error,
@@ -100,8 +102,9 @@ build.
 Moving the GL out of this process also deletes a class of failure rather than
 debugging it: no `__GL_SYNC_TO_VBLANK`, no interactor to pump, no context bound
 to its creating thread, no "two on-screen VTK windows core-dumps", and none of
-the extra threads those forced. The control loop is the only thread this module
-starts; viser runs its own server.
+the extra threads those forced. viser runs its own server, and the only thread
+this module starts is the camera's -- `--camera` decodes off the loop because
+one `cap.read()` is longer than a control tick.
 
 Geometry comes **straight off the compiled `MjModel`** -- `mesh_vert` and
 `mesh_face` per visual geom, posed each tick from `data.geom_xpos`/`geom_xmat`.
@@ -211,15 +214,37 @@ CAMERA_LOOK_AT = (0.016, 0.0, 0.003)
 # will briefly sit on top of this (they are dismissable, and the only one that
 # fires unprompted is the software-WebGL warning).
 TASK_MENU_CLASS = "cartesian-hand-task-menu"
-TASK_MENU_CSS = f"""<style>
-.mantine-Paper-root:has(> div > div > div > div > .{TASK_MENU_CLASS}) {{
-  position: fixed; left: 1em; top: 1em; width: 24em;
-  max-height: calc(100vh - 2em); overflow-y: auto; z-index: 5;
+CAMERA_CLASS = "cartesian-hand-camera"
+
+
+def window_css(class_name: str, placement: str) -> str:
+    """The style and the marker that float one gui folder into its own window.
+
+    A function, not two copies of the same rule, because the selector is the
+    fragile part: it is positional, and re-deriving it after a viser upgrade
+    should be one edit rather than one per window.
+    """
+    return f"""<style>
+.mantine-Paper-root:has(> div > div > div > div > .{class_name}) {{
+  position: fixed; {placement}
   background: var(--mantine-color-body);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
   border-radius: 0.5em; padding: 0.5em 0.7em;
 }}
-</style><div class="{TASK_MENU_CLASS}"></div>"""
+</style><div class="{class_name}"></div>"""
+
+
+TASK_MENU_CSS = window_css(
+    TASK_MENU_CLASS,
+    "left: 1em; top: 1em; width: 24em; max-height: calc(100vh - 2em);"
+    " overflow-y: auto; z-index: 5;")
+
+# Bottom left, and above the task menu, because the task menu may grow to the
+# full height of the window: the two overlap only when a long timeline is open,
+# and when they do the camera is the one you are looking at (the menu scrolls).
+# Not the right side -- viser's own panel is fixed there.
+CAMERA_CSS = window_css(
+    CAMERA_CLASS, "left: 1em; bottom: 1em; width: 24em; z-index: 6;")
 
 # The MJCF puts visual geoms in group 2 and the 448 CoACD collision hulls in 0.
 # Building only group 2 is why the scene is ten meshes and not 458; MuJoCo's own
@@ -390,7 +415,8 @@ def live(hand: str | None = None,
          studio: bool | None = None,
          panel: bool | None = None,
          web_port: int = VISER_PORT,
-         web_host: str = VISER_HOST) -> None:
+         web_host: str = VISER_HOST,
+         camera: str = "auto") -> None:
     """Command a hand from mujoco and show what it actually did.
 
     Returns on `seconds`, on Ctrl-C, or when the mujoco viewer's window closes.
@@ -453,6 +479,11 @@ def live(hand: str | None = None,
         web_host: interface to serve it on. Loopback by default -- these sliders
             move a real hand and nothing authenticates them. `0.0.0.0` to view
             or drive from another machine.
+        camera: what to show in the page's camera window. `auto` is whichever
+            camera is plugged in and no window when there is none; otherwise a
+            v4l2 name (`OBSBOT Meet 2`), a device (`/dev/video4`), an index
+            (`0`), a video file, or `none` for no window at all. Decoded on its
+            own thread -- see `WebStudio._add_camera`.
     """
     if policy is not None and (task is not None or goal_mm is not None or teach):
         raise ValueError("policy conflicts with task, goal_mm, and teach")
@@ -539,7 +570,8 @@ def live(hand: str | None = None,
     web = None
     if studio:
         web = WebStudio(model, cfg, cfg.counts_to_mm(counts, zero).tolist(),
-                        port=web_port, host=web_host, sliders=sliders)
+                        port=web_port, host=web_host, sliders=sliders,
+                        camera=None if camera == "none" else camera)
         if sliders:
             goal_mm = web.goal
         viewer = False
@@ -1287,7 +1319,8 @@ class WebStudio:
 
     def __init__(self, model: mujoco.MjModel, cfg: HandConfig,
                  start_mm: Sequence[float], port: int = VISER_PORT,
-                 host: str = VISER_HOST, sliders: bool = True) -> None:
+                 host: str = VISER_HOST, sliders: bool = True,
+                 camera: str | None = None) -> None:
         self.cfg = cfg
         # Set unconditionally, not inside the `sliders` branch: the loop reads
         # it every tick and a missing attribute would be an AttributeError in
@@ -1392,7 +1425,44 @@ class WebStudio:
                 self._add_task_buttons()
             self.composer = Composer(self.server, cfg, run=self._submit,
                                      pose=lambda: self._want)
+        self._camera = None
+        if camera:
+            self._add_camera(camera)
         self._quat = np.empty(4)
+
+    def _add_camera(self, device: str) -> None:
+        """A live camera window, fed by a thread that is never the control loop.
+
+        The whole point of the separate thread is that `cap.read()` blocks for a
+        frame period -- 33 ms at 30 fps, longer than a 20 ms control tick -- and
+        the JPEG encode viser does inside `handle.image = ...` costs several
+        more. Both are charged to `camera.CameraStream`'s thread, which does
+        capture, resize and encode and then hands viser's server thread bytes.
+        Nothing in `live` waits on a frame, and `push`/`report` are untouched.
+
+        Imported here rather than at module scope: opencv is only a dependency
+        of a session that asked for a camera.
+        """
+        from . import camera as camera_module
+        source = camera_module.open_device(device)
+        if source is None:
+            print("camera: no capture device found")
+            return
+        print(f"camera: {source}")
+        with self.server.gui.add_folder("camera"):
+            self.server.gui.add_html(CAMERA_CSS)
+            # A black frame, because `add_image` needs one now and the camera
+            # thread is still opening the device. 16:9 so the window does not
+            # jump size when the first real frame arrives.
+            view = self.server.gui.add_image(
+                np.zeros((camera_module.PREVIEW_WIDTH * 9 // 16,
+                          camera_module.PREVIEW_WIDTH, 3), np.uint8),
+                format="jpeg")
+
+        def show(frame: np.ndarray) -> None:
+            view.image = frame
+
+        self._camera = camera_module.CameraStream(source, show)
 
     def _add_tuning(self, cfg: HandConfig) -> None:
         """Speed, acc and the seven per-DOF torques, in one collapsed folder.
@@ -1590,6 +1660,8 @@ class WebStudio:
             handle.position = data.geom_xpos[geom]
 
     def close(self) -> None:
+        if self._camera:
+            self._camera.close()
         self.server.stop()
 class _NoViewer:
     """Headless stand-in for the passive viewer: same three calls, draws nothing.

@@ -94,8 +94,8 @@ and is the same on every hand. The servo ID is what answers on the serial bus an
 differs per hand. Everything above the driver is in DOF index order.
 
 **`orientation` is which way the servo counts.** `+1` means rising counts are
-rising millimetres. The current hand wiring has all seven at `-1`; this is a
-bench fact, not a convention inferred from left/right labels.
+rising millimetres. The current hand wiring has all seven at `-1`, measured on
+the bench rather than inferred from the left/right labels.
 
 > **`orientation` cannot fix a sim/real direction disagreement.** It cancels
 > between `mm_to_counts` and `counts_to_mm`, so the millimetre the model renders
@@ -117,7 +117,7 @@ A task module's `build()` returns a controller. Object manipulation returns a
 of rows (`Move`, `Probe`, `Hold`, `Twist`, `Loop`); fixed timelines and
 pre-calibration zeroing return a `Task` generator of `Motions` programs. Both
 keep hardware out of task code and are selected by the same task name. There is
-no per-task `*Policy` class anymore: the row table *is* the policy.
+no per-task `*Policy` class anymore; the row list is the policy.
 
 A row's `measure={"radius": AUX_JAW}` records what an earlier probe measured
 into `SequenceState.measured`, and any later row that needs it names it as
@@ -157,7 +157,7 @@ per env — because `start_mm` is `[N, J]` and the envs are independent. Reducin
 the outcome with a bare `.all()` and raising would let one env out of 4096
 discard the 4095 that succeeded, and the exception would unwind the generator so
 they could not even be recovered from it. Under domain randomisation some envs
-are *supposed* to fail; that is data.
+are *supposed* to fail, so the flags are data rather than an error condition.
 
 What a failure *means* is the caller's to decide: `sim.run` raises,
 `studio.finish` declines to save the calibration, a batched trainer masks the bad
@@ -179,7 +179,8 @@ direct tensor state instead.
 
 `--task zero` imports `tasks/zero.py` and calls its `build()`. There is no
 registry and nothing registers itself at import time. The file stem is the name
-because it *is* the import. A task module supplies exactly two names:
+because importing it is the whole dispatch. A task module supplies exactly two
+names:
 
 ```python
 build(hand, start_mm, cfg=None, **kwargs)   # required; returns Policy or Task
@@ -226,8 +227,8 @@ so the variant would answer with cap's `label` and put a second "Cycle cap" on
 the panel. Reaching through the module is what keeps the button opt-in, and giving
 every variant a button would fill the panel with them.
 
-Module docstrings are the bench log, and they have to be. A result kept only in
-working notes is not versioned beside the task variant it describes.
+Module docstrings carry the bench log, because a result kept only in working
+notes is not versioned beside the task variant it describes.
 
 ### The engine
 
@@ -268,9 +269,8 @@ decode returning padding look identical today. Load is also backwards from
 intuition: it is drive effort, highest during free motion and near zero at rest,
 so a high `load` column on the page does not mean contact.
 
-Deadlines are counted in ticks, not wall-clock seconds. Sim has no wall clock and
-does not run at real time, so a tick is the only unit that means the same thing
-on both backends.
+Deadlines are counted in ticks. Sim has no wall clock and does not run at real
+time, so a tick is the only unit that means the same thing on both backends.
 
 **Every torque a task commands on a horizontal DOF is floored at that hand's
 `torque_min_to_move`.** Below its own floor a joint does not move at all, so the
@@ -279,8 +279,8 @@ left for it to end is its deadline — the hand standing still between motions,
 waiting each timeout out in turn. `tilt` shipped with 50 and 80 against hand_2's
 floor of 100 at budgets of about 20 s a row, and `scissors` closed its contact
 probe at 150 against hand_1's 250. The floor applies to a probe as much as to
-free travel: a contact seek wants the *lightest* push that still travels, and
-below this it is not a light push, it is no push.
+free travel: a contact seek wants the *lightest* push that still travels, and a
+below-floor torque does not travel at all.
 
 **z is not excluded, and an earlier version of this file said it was.** The
 exemption reasoned that z's resistance is gravity rather than friction and that
@@ -290,7 +290,7 @@ descent names z with no explicit effort, so it could not move the stage at all,
 burned its deadline, and retired the environment, which silently skipped every
 row after it. Both halves of the reasoning are wrong: effort is a force *cap*,
 so a free descent never approaches it and the exemption bought no gentleness,
-and 50 against a floor of 800 is not gentle, it is immobile in both directions.
+and 50 against a floor of 800 is immobile in both directions.
 `Sequence.travel_effort` is now `maximum(flat, floor)` on every DOF.
 
 An explicit `effort=` on a row is still not floored, which is deliberate: a row
@@ -299,7 +299,7 @@ that presses z into something names its own number, and `lift_effort` and
 an explicit z effort *below* the floor, which now stands unchanged and probably
 cannot descend.
 
-Nothing checks any of this. mujoco, `MockServo` and the toy hand all ignore the
+Nothing checks any of this: mujoco, `MockServo` and the toy hand all ignore the
 torque register, so on every backend a below-floor row looks correct and merely
 slow.
 
@@ -324,15 +324,15 @@ The direct functions are closed-loop behaviors:
 `twist_stroke` takes two optional per-environment arguments, because three tasks
 need the same stroke and only differ in these:
 
-- **`reverse` (`[N]` bool)** exchanges which finger opens the gap and which
-  closes it, which is what runs the stroke the other way round. `cap` unscrews
-  and re-threads the same cap in a *single* task, so direction has to live in
-  tensor state rather than at the call site.
-- **`press` (`TwistPress`)** drives a third axis to depth after the re-grip,
-  holds it through the turn, and backs off before the next release -- a cap
-  being threaded back onto its bottle and a screw being driven in engage by
-  depth as well as rotation. Its `return_effort` is separate from `effort`
-  because backing off *raises* the stage and z torque is directional.
+- `reverse` (`[N]` bool) exchanges which finger opens the gap and which closes
+  it, which is what runs the stroke the other way round. `cap` unscrews and
+  re-threads the same cap in a *single* task, so direction has to live in tensor
+  state rather than at the call site.
+- `press` (`TwistPress`) drives a third axis to depth after the re-grip, holds
+  it through the turn, and backs off before the next release. A cap being
+  threaded back onto its bottle and a screw being driven in engage by depth as
+  well as rotation. Its `return_effort` is separate from `effort` because
+  backing off *raises* the stage and z torque is directional.
 
 An environment that configures no press skips both z phases on the transition
 itself rather than idling a tick in each, so a stroke without a press issues
@@ -342,8 +342,8 @@ The closed-loop primitives accept an `[N]` active mask and return an `Action`,
 typed state, and a `PrimitiveResult`; `hold` is the smaller action-update helper.
 Results publish `succeeded`, `timed_out`,
 `reached_goal_without_contact`, `stopped_at_mm`, and validity tensors.
-Information passes between rows via `SequenceState.measured` -- a row that needs
-it reads it as `lambda m: m.radius`. Primitives do not inspect or mutate one
+Information passes between rows via `SequenceState.measured`, which a row that
+needs it reads as `lambda m: m.radius`. Primitives do not inspect or mutate one
 another's private state.
 
 This explicit result-to-state-to-input path is how closed-loop primitives
@@ -354,8 +354,8 @@ branches, or backend objects.
 seek commands `here - overtravel` in millimetres, and `counts_to_mm` has already
 applied `orientation` on the way in. A seek written in raw counts has to say
 `here - orientation * overtravel`, and that sign comes out wrong about half the
-time someone works it out again. It did, twice. Working in millimetres removes
-the mistake instead of correcting it. The cost is that a wrong sign is
+time someone works it out again, as it did twice here. Working in millimetres
+removes the mistake instead of correcting it. The cost is that a wrong sign is
 **invisible in millimetres** and can only be caught per DOF in counts, which
 nothing does today.
 
@@ -364,8 +364,8 @@ nothing does today.
 `policy.py` defines the backend-neutral contract. `Observation` contains
 `position_mm`, `velocity_mm_s`, `contact`, and `elapsed_ticks`; `Action` contains
 `goal_mm`, `max_speed_mm_s`, and normalized `effort_limit`. Every field is a
-tensor with a leading environment dimension. Hardware is ordinary `N=1`, not a
-different API.
+tensor with a leading environment dimension. Hardware is ordinary `N=1` rather
+than a different API.
 
 Policy state and parameters are typed dataclasses with tensor leaves and fixed
 primitive-state fields. An optimizer may own a packed `theta[N,P]`, but it
@@ -383,16 +383,16 @@ objects:
 | `cap` | `caps_contact_based.py` | the canonical one; probe, twist, extract, re-thread, present |
 | `screwdriver` | `manual_screw_driver.py` | both jaws hold **one** tool; the base jaw is taut-contact only and never squeezed. `cw` selects `reverse` + press |
 | `pipette` | `pipetting.py` | longest sequence; a twist-lock knob, then plunge and draw as one shared push-to-stall stroke |
-| `syringe` | `syringe.py` | no twist at all -- the repeating DOF is **z**, and the jaw re-grips the plunger higher each stroke |
-| `scissors` | `scissor_type.py` | no twist either; z travel *is* the tool's pivot. Both jaws stay squeezed at the end |
+| `syringe` | `syringe.py` | no twist at all; the repeating DOF is **z**, and the jaw re-grips the plunger higher each stroke |
+| `scissors` | `scissor_type.py` | no twist either; z travel drives the tool's pivot. Both jaws stay squeezed at the end |
 
 `zero` deliberately stays a `Motions` generator: its uncalibrated negative
 overtravel must not pass the direct-action clamp that `studio.live` applies to
-every policy goal. `tilt` stays one too -- nothing in it is parameterised by a
-measurement.
+every policy goal. `tilt` stays one too, since nothing in it is parameterised by
+a measurement.
 
-These ports are transcriptions, not bench results. The sequences are validated;
-these implementations of them have not been run on the objects.
+The sequences are validated; these implementations of them have not been run on
+the objects.
 
 `Sequence` is the reference direct manipulation policy. Its step machine
 runs the tested `cap` sequence as a row list:
@@ -420,11 +420,10 @@ Move  present         fingers home
 Two things in that list carry the argument for this path. `Probe` records what
 it measured under a name (`measure={"radius": AUX_JAW}`) and every later row
 reads it back as `radius=lambda m: m.radius`; that is the whole measurement
-channel, with no dictionaries, registers or host-side branches. And the stroke
-count is written down nowhere. It is the cap's circumference over how far one
-finger can slide, known only once the jaws have closed and felt how big the cap
-is, which is exactly what a fixed `[N,J,K]` program cannot express because its
-length is fixed before it runs.
+channel. The stroke count is written down nowhere. It is the cap's circumference
+over how far one finger can slide, known only once the jaws have closed and felt
+how big the cap is, which is exactly what a fixed `[N,J,K]` program cannot
+express because its length is fixed before it runs.
 
 A `Probe` latches a `grip` effort the tick contact is confirmed, so the body
 of a sequence never re-states the clamp. The base-jaw command remains in
@@ -527,15 +526,15 @@ One shipped (`search.py`, random search over the declared bounds, ranked on
 2026-09-03 because it optimises against a simulator that cannot see most of what
 it samples:
 
-- **mujoco drops torque on the floor.** `sim.profile` takes the goal and nothing
+- mujoco drops torque on the floor. `sim.profile` takes the goal and nothing
   else. So every `*_torque` field is invisible there — 1 of `zero`'s 2 knobs, 3
-  of `cap`'s 9, and **half of every composed task's**, since each row emits a
+  of `cap`'s 9, and half of every composed task's, since each row emits a
   `goal_i` and a `torque_i`. Sampled anyway, they came back in the winner's
   report as if they were findings.
-- **It only found the trivial gradient.** Score rose monotonically with
-  `timeout_margin` and with nothing else. That is "a longer budget passes more
-  rows", not tuning.
-- **It disagreed with the bench, and the bench was right.** Sim scored `zero`'s
+- It only found the trivial gradient. Score rose monotonically with
+  `timeout_margin` and with nothing else, which is a longer budget passing more
+  rows rather than a tuned parameter.
+- It disagreed with the bench, and the bench was right. Sim scored `zero`'s
   shipped defaults at 0.50; the hand_1 log in `tasks/zero.py` has the same
   defaults reproducing the datum to 0.074 mm with no phase expiring. So
   `--save-as` would have written a variant that slows real zeroing ~70% to fix a
@@ -564,7 +563,8 @@ qpos   what the hand did     read_all -> counts -> mm -> the model
 ```
 
 The model's pose is never the slider. It is what came back off the bus, so the
-gap between where you asked and where the model is *is* the tracking error, live.
+gap between where you asked and where the model is shows the tracking error,
+live.
 Both directions are one packet, and they are the same two packets any control
 loop already sends, so closing the loop costs nothing over watching it.
 `read_all` on 7 servos is 1.47 ms and `set_positions` is 0.00 ms, because a
@@ -582,7 +582,11 @@ the compiled `MjModel`, between two windows.
 │  tune a task ▸   │                              │ 0..6 goal   (mm) │
 │  TASK TIMELINE ▾ │                              │ tuning ▸         │
 └──────────────────┘                              └──────────────────┘
-   floated left by CSS                            viser's own panel
+┌──────────────────┐
+│ camera           │
+│  [ live frames ] │                              viser's own panel
+└──────────────────┘
+   floated left by CSS
 ```
 
 Two windows because the halves are used at different times, and the left one is
@@ -601,11 +605,24 @@ renders the menu quietly back inside the right-hand panel. That is invisible to
 Python: checking it needs a real browser driven against the served page, which
 nothing does today.
 
-Numbers, not bars: 0.01 mm of tracking error is a real number and zero pixels,
-and a bar would have to be built wider than `config`'s travel to show a rail
-overrun. There is no GL context in this process, and the control loop is the
-only thread this module starts. `--studio False` falls back to MuJoCo's passive
-viewer, and `--no-viewer` prints millimetres.
+The panel shows numbers rather than bars: 0.01 mm of tracking error is a real
+number and zero pixels, and a bar would have to be built wider than `config`'s
+travel to show a rail overrun. There is no GL context in this process.
+`--studio False` falls back to MuJoCo's passive viewer, and `--no-viewer`
+prints millimetres.
+
+The camera window is the same CSS trick, floated bottom left, and the one thing
+in the studio that runs off the control loop. `--camera` defaults to `auto`,
+which is whichever USB camera is plugged in and no window when there is none
+(`--camera 'OBSBOT Meet 2'`, `/dev/video4`, `0`, a video file, or `none`).
+`cartesian_hand/camera.py` opens it MJPG at 720p on a thread of its own and
+does capture, resize to 480 px, colour convert and JPEG encode there, handing
+viser's server thread nothing but bytes to send at 15 Hz. That split is the
+whole design: `cap.read()` blocks for a frame period — 33 ms at 30 fps, longer
+than a 20 ms control tick — so a preview on the loop would make every servo
+write late. `tests/test_camera_window.py` drives the path off a generated clip
+and asserts the calling thread never stalls. opencv is imported only when a
+camera is asked for.
 
 The loop writes `qpos` and calls `mj_forward`, never `mj_step`. Stepping would
 re-simulate, and gravity and contact would pull `qpos` away from the values the
@@ -622,7 +639,7 @@ control path with its own bugs, and it could not exist in sim at all.
 
 ### `sim.run`, MuJoCo
 
-Same task files, not a port of them. What differs is six lines: `mj_step` and a
+Same task files, run unmodified. What differs is six lines: `mj_step` and a
 `qpos` read where the other has `set_positions` and `read_all`.
 
 Two things it does not cover. **Effort is ignored here.** The MJCF's actuators
@@ -636,7 +653,7 @@ there, but the missing object and effort dynamics still make automatic tuning
 misleading.
 
 `mj_step` here and `mj_forward` in the studio, for opposite reasons. In the
-studio the physics *is* the hand, and re-simulating would overwrite what it
+studio the hand supplies the physics, and re-simulating would overwrite what it
 reported. Here the physics is all there is. Stepping is also what applies the
 `<equality>` couplings, so a rack pair's follower moves on its own instead of
 needing the explicit write the studio loop does.
@@ -651,12 +668,12 @@ representation is not justified for frame or video output.
 
 Zeroing turns encoder counts into millimetres with an absolute meaning. Three
 phases, in mechanical order: fingers retract before jaws close, jaws clear before
-z drops. Not cosmetic. Run them the other way and a finger is inside a jaw that
-is closing.
+z drops. Run them the other way and a finger is inside a jaw that is closing.
 
-**It runs in a relative frame, and needs to.** Millimetres are undefined before
-it completes. It does not need absolute millimetres, it needs *distances*. Every
-goal is `here ± something`, so the frame's origin cancels and the task is correct
+It runs in a relative frame, and needs to. Millimetres are undefined before it
+completes, and what the task needs is *distances* rather than absolute
+positions. Every goal is `here ± something`, so the frame's origin cancels and
+the task is correct
 in the startup-relative frame an uncalibrated hand already uses, in the calibrated
 frame, and in the sim's where `q = 0` is the rest pose. One task, three frames,
 no branch.
@@ -723,11 +740,11 @@ Prefer a `/dev/serial/by-id/` path over `/dev/ttyACM0`. ACM numbers are handed
 out in enumeration order, so with two hands plugged in, a hardcoded number
 silently addresses whichever powered up first.
 
-Frozen is not style: the per-DOF tensors are cached per device, so mutating
-`cfg.torque` after anything has called `gain_vector` leaves the old torque in the
-cache and every later tick keeps commanding it. A docstring saying "immutable"
-does not stop that; `FrozenInstanceError` does. Use `variant()`, which drops the
-cache.
+Frozen matters for a concrete reason: the per-DOF tensors are cached per device,
+so mutating `cfg.torque` after anything has called `gain_vector` leaves the old
+torque in the cache and every later tick keeps commanding it. A docstring saying
+"immutable" does not stop that; `FrozenInstanceError` does. Use `variant()`,
+which drops the cache.
 
 Everything per-DOF is a `torch.Tensor`, so that `device="cuda"` is the only
 difference between the sim backend at N=4096 and the hardware backend at N=1.
@@ -760,8 +777,7 @@ lifting 30 mm to 35 mm and measuring travel after 3 s:
 |---|---|---|---|---|---|
 | moved (of 5.0 mm) | 1.50 | 4.54 | 4.54 | 4.54 | 4.53 |
 
-The cliff is sharp. 150 stalls outright, 200 tracks fully, and nothing above 200
-helps. `TORQUE_MIN_TO_MOVE` uses 300, the measured floor plus margin, because the
+150 stalls outright, 200 tracks fully, and nothing above 200 helps. `TORQUE_MIN_TO_MOVE` uses 300, the measured floor plus margin, because the
 bisect ran unloaded and the stage has to lift the aux gripper while it is holding
 something. Pressing *down* at 50 works and tasks rely on it, so this is a floor
 for the lifting direction, not a correction to the whole axis.
@@ -859,7 +875,7 @@ cartesian_hand/
                  task is two things and no more: a human-scale Config, and a
                  build() returning its row list. The state machine is Sequence's
                  and lives in primitives.py, so there is one of it rather than
-                 one per task -- they were six near-identical controllers in six
+                 one per task. They were six near-identical controllers in six
                  <name>_policy.py files until 2026-09-04, which is how one
                  deadline bug got copy-pasted into all of them
     zero.py      find every hard stop, report it as the hand's zero
@@ -925,15 +941,15 @@ What has run on servos:
 
 Not yet established:
 
-- **No direct manipulation policy has completed on its physical object.** The
+- No direct manipulation policy has completed on its physical object. The
   canonical `--task cap` path does complete through the real `studio.live` bus
   executor with `MockServo` providing bottle/cap stops. This exercises the actual
   command conversion, low-speed contact approach, persistent grip, per-phase
   effort, and extraction sequence; only the mechanics are mocked. The stock
   MuJoCo model has no equivalent objects, so object simulation is not used as a
   completion gate.
-- **The four tasks ported from `cartesian_hand_old_validated_real/` are
-  transcriptions.** `screwdriver`, `pipette`, `syringe` and `scissors` enter the
+- The four tasks ported from `cartesian_hand_old_validated_real/` are
+  transcriptions. `screwdriver`, `pipette`, `syringe` and `scissors` enter the
   real executor path correctly, but the *sequences* are what was validated on
   hardware, not these implementations of them. Each needs its object and a
   calibrated hand.
@@ -942,7 +958,7 @@ Not yet established:
   `aux_min_mm` (the original relied on an unchecked `set_pos` timeout), and every
   ported task floors its horizontal and z-ascent efforts at that hand's measured
   `torque_min_to_move` rather than inheriting a flat travel torque.
-- **Total travel is unmeasured.** Zeroing finds one hard stop per DOF, not both,
+- Total travel is unmeasured. Zeroing finds one hard stop per DOF, not both,
   so `STANDARD_TRAVEL` is still CAD. See Known issues.
 - `counts_per_mm` is still the derived value, never checked against a measured
   distance.
@@ -953,8 +969,7 @@ Not yet established:
 
 **The unit suite is gone. `tests/` was deleted on 2026-09-04.** Read every claim
 in this file as a record of what was measured or reasoned at the time, not as
-something a run will catch if it stops being true. A clean import is not
-evidence.
+something a run will catch if it stops being true.
 
 What stands in its place is one golden-trace check:
 
@@ -1046,7 +1061,7 @@ The sim's whole negative action half is unused as well, since it clamps against 
 range starting at rest. `config`'s convention is the better one and is the one to
 keep, so the fix is one offset in the sim. No policy is trained on this hand yet,
 so reconciling costs nothing today and invalidates checkpoints after the first
-run. It is the cheapest it will ever be.
+run.
 
 **Saved zero offsets go stale by whole turns.** A servo reports (turns since
 power-up × `counts_per_rev`) plus the angle within the current turn. The angle
