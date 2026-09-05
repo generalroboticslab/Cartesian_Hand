@@ -78,17 +78,17 @@
     "goals_sha256": "4f1e9904c167e032"
   },
   "syringe": {
-    "ticks": 3583,
+    "ticks": 3273,
     "final_mm": [
       20.0,
       0.0,
       0.0,
-      5.92,
+      10.86,
       20.0,
       0.0,
       0.0
     ],
-    "goals_sha256": "31c15c49adc593d0"
+    "goals_sha256": "62fa591be35da433"
   },
   "pipette": {
     "ticks": 1827,

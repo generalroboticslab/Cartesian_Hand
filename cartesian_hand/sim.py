@@ -79,16 +79,23 @@ def step_limit_mm(cfg: HandConfig,
             / cfg.counts_per_mm / cfg.control_hz)[None, :]
 
 
-def profile(goal_mm: torch.Tensor, position_mm: torch.Tensor,
+def profile(goal_mm: torch.Tensor, command_mm: torch.Tensor,
             limit_mm: torch.Tensor) -> torch.Tensor:
-    """Walk the commanded goal toward `goal_mm` at no more than `limit_mm`/tick.
+    """Walk the *commanded* setpoint toward `goal_mm` at no more than `limit_mm`/tick.
 
-    Applied to the *command*, not to the joint: the setpoint is what the servo
-    ramps, and the joint follows it with whatever error the load imposes. Doing
-    it the other way -- clamping measured motion -- would model a joint that
-    cannot be pushed off course, which is the opposite of what a stall is.
+    The setpoint is what the servo ramps, and the joint follows it with whatever
+    error the load imposes. Ramping from the measured position instead would
+    model a joint that cannot be pushed off course -- the opposite of a stall --
+    and, more importantly, it can never let the setpoint outrun the joint by
+    more than one step, which is exactly what `acc` does on a real servo and
+    what is needed for a gravity-loaded DOF to develop enough force to lift.
+    z could not rise against gravity here before this fix: against the bench it
+    took `acc=200` to free the z stage.
+
+    The first call seeds the setpoint with the joint's measured position, so a
+    sim run starts from where it actually is.
     """
-    return position_mm + (goal_mm - position_mm).clamp(-limit_mm, limit_mm)
+    return command_mm + (goal_mm - command_mm).clamp(-limit_mm, limit_mm)
 
 
 def drive(controller: Task | Policy, cfg: HandConfig,
@@ -122,8 +129,15 @@ def drive(controller: Task | Policy, cfg: HandConfig,
     runner = (None if direct is not None else
               TaskRunner(controller, hold_torque=hold_torque))
 
+    # The setpoint lives across ticks: a fresh one per tick would never outrun
+    # the joint by more than one step, and a gravity-loaded DOF would not
+    # develop enough force to lift. Seeded from the first reading so the run
+    # starts from where it actually is.
+    setpoint: torch.Tensor | None = None
     for _ in range(int(max_seconds * hz)):
         mm = read_mm()
+        if setpoint is None:
+            setpoint = mm.clone()
         external = sense()
         if direct is not None:
             if direct.finished():
@@ -141,7 +155,8 @@ def drive(controller: Task | Policy, cfg: HandConfig,
         # mujoco clamps ctrl to the range `narrow_ctrlrange` set, which is what
         # turns zeroing's deliberate 120mm overtravel into "drive to the closed
         # end and lean on it" rather than an unreachable goal.
-        write_goal(profile(goal, mm, tick_limit))
+        setpoint = profile(goal, setpoint, tick_limit)
+        write_goal(setpoint)
         advance()
     else:
         raise RuntimeError(
