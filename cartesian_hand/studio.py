@@ -186,6 +186,38 @@ VISER_HOST = "0.0.0.0"
 CAMERA_POS = (0.22, -0.22, 0.16)
 CAMERA_LOOK_AT = (0.016, 0.0, 0.003)
 
+# The camera keeps looking at the mesh bounding box centre above, but the
+# meshes themselves are drawn `HAND_OFFSET` away from it (see the `/hand`
+# frame in `WebStudio.__init__`) so the hand renders off to one side of that
+# point rather than under it. Needed because the two floating windows and
+# viser's own panel now claim the top-left, left and right of the page (see
+# `CAMERA_CSS`, `TASK_MENU_CSS`) -- a hand centred on the aim point above
+# renders straight behind one of them.
+#
+# Derived from the camera's own screen axes rather than guessed in world XYZ,
+# because "right" and "down" are screen directions, not world ones, and this
+# camera is neither level nor axis-aligned. `_CAMERA_RIGHT`/`_CAMERA_DOWN` are
+# that basis, built the same way any look-at camera's is: forward is the
+# gaze direction, right is forward crossed with world up, and down is right
+# crossed with forward (then negated) so it is orthogonal to both rather than
+# assumed to be `-world_up`, which it is not once the camera is tilted, as
+# this one is.
+_forward = np.array(CAMERA_LOOK_AT) - np.array(CAMERA_POS)
+_forward /= np.linalg.norm(_forward)
+_CAMERA_RIGHT = np.cross(_forward, (0.0, 0.0, 1.0))
+_CAMERA_RIGHT /= np.linalg.norm(_CAMERA_RIGHT)
+_CAMERA_DOWN = np.cross(_forward, _CAMERA_RIGHT)
+# 0.05 m right, 0.07 m down against the 0.27 m mesh diagonal and 0.34 m
+# camera distance: enough to clear the windows without pushing the hand out
+# of frame. The right amount, and the first 0.03 m of the down, are tuned by
+# eye -- there is no formula for "not occluded". The remaining 0.04 m is a
+# further 5em nudge down, converted with viser's own screen-to-world scale
+# (`CameraControls.tsx`'s `pixelToWorldScale`, `2*distance*tan(fov/2)/height`)
+# at three.js's default 75 deg vertical fov and this page's ~961 px canvas
+# height -- an em is a CSS unit, not a world one, so "5em" only means
+# something once it is read off a specific viewport.
+HAND_OFFSET = tuple(_CAMERA_RIGHT * 0.05 + _CAMERA_DOWN * 0.07)
+
 # The task menu is its own window on the left of the page, and this is the whole
 # mechanism: viser serves exactly one control panel (a `ThemeConfigurationMessage`
 # picks floating/collapsible/fixed for it and there is no message that opens a
@@ -299,11 +331,11 @@ TASK_MENU_CSS = window_css(
     "left: 1em; top: 1em; width: 24em; max-height: calc(100vh - 2em);"
     " overflow-y: auto; z-index: 5;")
 
-# Bottom left, and above the task menu, because the task menu may grow to the
-# full height of the window: the two overlap only when a long timeline is open,
-# and when they do the camera is the one you are looking at (the menu scrolls).
-# Not the right side -- viser's own panel is fixed there. Draggable so it can
-# be moved out from behind the task menu instead of only ever sitting here.
+# Right of the task menu, not below it: the task menu is `1em` + `24em` wide,
+# so `26em` clears it with a 1em gap, and `top: 1em` levels the two windows'
+# tops instead of anchoring the camera to the bottom of the viewport. Not the
+# right side either -- viser's own panel is fixed there. Draggable so it can
+# be moved off this spot instead of only ever sitting here.
 #
 # `resize: horizontal` needs `overflow` off `visible` to draw its handle --
 # that is the only reason `overflow: auto` is here, not because this folder's
@@ -312,7 +344,7 @@ TASK_MENU_CSS = window_css(
 # rescales to whatever width the handle leaves it, aspect ratio intact.
 CAMERA_CSS = window_css(
     CAMERA_CLASS,
-    "left: 1em; bottom: 1em; width: 24em; z-index: 6;"
+    "left: 26em; top: 1em; width: 33.6em; z-index: 6;"
     " resize: horizontal; overflow: auto; min-width: 12em; max-width: 90vw;",
     draggable=True)
 
@@ -703,7 +735,7 @@ def live(hand: str | None = None,
                 if not armed:
                     want = None          # disarmed: nothing is commanded
                     if web:
-                        web.pending = None   # a click while limp is not a queue
+                        web.cancel_repeat()  # a click while limp is not a queue
                 else:
                     measured = cfg.counts_to_mm(counts, zero)
 
@@ -760,6 +792,8 @@ def live(hand: str | None = None,
                             zero, done_ok = finish(running, runner, cfg, zero,
                                                    counts, web)
                             runner, failed = None, not done_ok
+                            if web is not None:
+                                web.task_finished(running, failed)
                         if step is None and runner is None and exit_when_done:
                             if failed:
                                 raise RuntimeError(f"task {running!r} failed")
@@ -829,6 +863,8 @@ def live(hand: str | None = None,
                         else:
                             print(f"[{cfg.name}] {running}: done")
                         runner = None
+                        if web is not None:
+                            web.task_finished(running, failed)
                         if exit_when_done:
                             if failed:
                                 raise RuntimeError(f"task {running!r} failed")
@@ -1385,6 +1421,12 @@ class WebStudio:
     The rack-pair follower needs no special handling on this path, unlike every
     renderer before it: `push` reads whatever `qpos` the loop wrote, and the
     loop already writes both sides of a pair.
+
+    Every mesh is a child of one `/hand` frame rather than a scene root, and
+    that frame carries `HAND_OFFSET` -- the one displacement in this path that
+    is not `geom_xpos`. `push` still writes each handle's true pose every
+    tick; the parent's constant offset is what moves the whole assembly out
+    from under the page's floating windows, which `HAND_OFFSET` explains.
     """
 
     def __init__(self, model: mujoco.MjModel, cfg: HandConfig,
@@ -1395,7 +1437,19 @@ class WebStudio:
         # Set unconditionally, not inside the `sliders` branch: the loop reads
         # it every tick and a missing attribute would be an AttributeError in
         # the control path rather than a page with no buttons on it.
-        self.pending: str | None = None
+        self._pending: str | None = None
+        # Repeat state for the "loop count" input: `_repeat_name` is what a
+        # fresh submission (a button click, or the composer's run) is
+        # repeating, `_repeat_remaining` counts the runs still owed after the
+        # one already submitted, and `_repeat_resume_at` is the wall-clock
+        # time the next one may start -- one second after the previous run's
+        # result was read, not one second of blocking sleep inside a control
+        # loop that has to keep ticking the bus regardless. See `pending`'s
+        # getter, which is where the wait actually turns into a resubmission,
+        # and `task_finished`, which the loop calls when a run ends.
+        self._repeat_name: str | None = None
+        self._repeat_remaining: int = 0
+        self._repeat_resume_at: float | None = None
         # A list of floats, written by viser's server thread from a slider
         # callback and read by the control loop. One float into one slot is the
         # entire write, so there is nothing here a lock would make safer.
@@ -1411,6 +1465,14 @@ class WebStudio:
                       for d, v in enumerate(start_mm)]
         self.server = viser.ViserServer(host=host, port=port, verbose=False)
 
+        # "medium"'s 20em clips `report`'s readout: the table is 46 monospace
+        # characters wide (see its own comment on that number) and the panel's
+        # padding leaves it just short, so the `°C` column -- last, and the
+        # only one worth reading before the first temperature poll lands --
+        # wraps onto its own line or is left off-screen. "large" (24em) is the
+        # next preset up and clears it; there is no size between the two.
+        self.server.gui.configure_theme(control_width="large")
+
         # Per client, not once on the server: viser has no global initial camera
         # and each tab gets its own, so a page opened later would otherwise open
         # at the default. Reopening a tab re-frames, which is what you want -- a
@@ -1422,6 +1484,16 @@ class WebStudio:
             client.camera.position = CAMERA_POS
             client.camera.look_at = CAMERA_LOOK_AT
 
+        # A plain parent node, not a transform on each mesh: `push` writes
+        # every handle's `.position` to the model's own `geom_xpos` each tick,
+        # so a per-mesh offset would be overwritten the first frame it ran.
+        # Nesting the meshes under this frame instead means `push` still
+        # writes the true pose and the frame's own `HAND_OFFSET` is what
+        # carries it sideways -- one node, applied once, that `push` never
+        # has to know about.
+        self._hand = self.server.scene.add_frame(
+            "/hand", show_axes=False, position=HAND_OFFSET)
+
         self._handles = []
         for geom in range(model.ngeom):
             if model.geom_group[geom] != VISUAL_GROUP:
@@ -1431,7 +1503,7 @@ class WebStudio:
             face = model.mesh_faceadr[mesh]
             name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
             self._handles.append((geom, self.server.scene.add_mesh_simple(
-                f"/{name or geom}",
+                f"/hand/{name or geom}",
                 model.mesh_vert[vert:vert + model.mesh_vertnum[mesh]].astype(np.float32),
                 model.mesh_face[face:face + model.mesh_facenum[mesh]].astype(np.uint32),
                 color=tuple(model.mat_rgba[model.geom_matid[geom]][:3]))))
@@ -1491,6 +1563,13 @@ class WebStudio:
         # and the goal sliders do not.
         with self.server.gui.add_folder("tasks"):
             self.server.gui.add_html(TASK_MENU_CSS)
+            # Applies to whatever a click submits next -- a task button below
+            # or the composer's "Run to row"/"Run tuned" -- since both reach
+            # the loop through the same `_submit`. 1 is the default rather
+            # than 0 so a button with no reason to look here still runs
+            # exactly once, as it always has.
+            self._loop_count = self.server.gui.add_number(
+                "loop count", initial_value=1, min=1, max=1000, step=1)
             if sliders:
                 self._add_task_buttons()
             self.composer = Composer(self.server, cfg, run=self._submit,
@@ -1621,8 +1700,67 @@ class WebStudio:
         not here: this thread cannot see whether one is running without sharing
         state with it, and `pending` is a single slot, so the last write before
         the loop reads it wins.
+
+        Starts (or restarts) the "loop count" repeat: this is a fresh ask, so
+        it owns `_repeat_remaining` runs after this one, whatever the field
+        read a moment ago. A repeat's own resubmission goes through the
+        `pending` getter instead, not through here, which is what keeps a
+        10-run loop from reading the field ten times and relatching onto
+        whatever count is on the page *now*.
         """
+        self._repeat_name = name
+        self._repeat_remaining = max(0, int(self._loop_count.value) - 1)
+        self._repeat_resume_at = None
         self.pending = name
+
+    @property
+    def pending(self) -> str | None:
+        """The task the control loop should submit next, or `None`.
+
+        Self-populating: once a repeat's one-second wait
+        (`_repeat_resume_at`) has elapsed, reading this property is what turns
+        it into the next submission. That keeps the wait out of the control
+        loop's own tick -- `live` still just reads `web.pending` and clears it
+        the same way it always has, unaware anything is looping.
+        """
+        if (self._pending is None and self._repeat_resume_at is not None
+                and time.time() >= self._repeat_resume_at):
+            self._pending = self._repeat_name
+            self._repeat_resume_at = None
+        return self._pending
+
+    @pending.setter
+    def pending(self, name: str | None) -> None:
+        self._pending = name
+
+    def task_finished(self, name: str, failed: bool) -> None:
+        """Told by the control loop when task `name`'s run just ended.
+
+        A failure ends the repeat rather than retrying it: a run that timed
+        out or missed its condition is unlikely to succeed immediately after,
+        and looping a probe into a stop it already failed to clear is how a
+        rail overrun becomes ten of them. Otherwise, one run
+        is owed off `_repeat_remaining`, and the wait before it starts is set
+        here rather than slept here, for the reason `pending` explains.
+        """
+        if failed or name != self._repeat_name or self._repeat_remaining <= 0:
+            self._repeat_name = None
+            return
+        self._repeat_remaining -= 1
+        self._repeat_resume_at = time.time() + 1.0
+
+    def cancel_repeat(self) -> None:
+        """Drop any queued submission and any repeat waiting out its gap.
+
+        Called where disarming already drops a running task (see `live`): a
+        loop count > 1 waiting out its one-second gap is state exactly like a
+        running task's, and leaving it set would resume the loop on its own
+        the moment torque comes back on, with nobody having clicked anything.
+        """
+        self._pending = None
+        self._repeat_name = None
+        self._repeat_remaining = 0
+        self._repeat_resume_at = None
 
     @property
     def armed(self) -> bool:

@@ -5,8 +5,7 @@
       -> release the knob -> rise -> close the aux side into a fist
       -> press to `plunger_z`, rise, twice    the plunger
       -> rest the base fingers
-      -> press to `eject_z`, rise, twice      the tip ejector
-      -> final pause
+      -> press to `eject_z`, rise             the tip ejector, once, ending high
 
 The row list is flat: no `Loop`, and the stroke counts are written out. `Loop`
 earns its place when the count is not knowable at build time -- `cap` derives
@@ -32,10 +31,10 @@ the next tick. The bench run of 2026-09-05 spent 0.9 s driving the fingers to
 validated demo pressed to a stall because hand-tuned depths did not reproduce
 run to run, and this file carried that. It presses to `plunger_z` instead,
 because a pipette's dispensed volume is set by how far the plunger goes and a
-stall only ever finds the one stop at the bottom of its travel. The cost is real
-and is accepted: a pressed plunger and a slipped grip are identical as
-positions, so this row can no longer tell them apart -- which is exactly what
-`Probe` was doing here.
+stall only ever finds the one stop at the bottom of its travel. The cost is
+real and is accepted: a pressed plunger and a slipped grip are identical as
+positions, so this row cannot tell them apart -- which is exactly what `Probe`
+was doing here.
 
 **Four z heights, all absolute, no arithmetic.** `knob_z`, `top_z`,
 `plunger_z`, `eject_z`. They were briefly a height plus three offsets, which
@@ -44,9 +43,11 @@ that matters -- that all four share the 0 to 50 mm rail and the buttons are at
 fixed heights on a pipette held in a fixed grip. Absolute makes the ordering
 `eject_z < plunger_z < top_z` visible on the sliders.
 
-A press is free, so stopping short of its height is a fault and says so with
-the z it stopped at. `accept_stall` was tried and is what let a fist that
-plainly never reached the button report success -- see the comment in `build`.
+A press does not fault: it is a `Hold`, timed to `press_seconds`, that commands
+its z goal and always advances once the clock runs out -- see the comment in
+`build`. A `Move` that stopped short used to fault, and a fault retires the
+whole `Sequence`, which then reissues its last held action forever: the fist
+sat driven into whatever it hit until an operator killed it.
 
 **The two pairs press two different buttons.** The first works the plunger; the
 second works the tip ejector, which sits much lower, so they are two rows at two
@@ -168,20 +169,20 @@ class Config:
     and it is set by what `zero` needs -- hand_2's fingers sit at 200 counts/s,
     which makes the knob twist's 40 mm finger sweep 16 s. Deadlines derive from
     this number, so lowering it lengthens them with it."""
-    squeeze_torque: float = field(default=250.0, metadata={"tune": (200.0, 800.0)})
+    squeeze_torque: float = field(default=400.0, metadata={"tune": (200.0, 800.0)})
     """Holding torque on both jaws: the base jaw on the pipette body for the
     whole run, and the aux jaw on the knob at every close and re-grip.
 
     One number for the two because `Hold` carries one effort for the group it
     names, and the body and the knob have never wanted different ones. A jaw
     that needs its own gets its own row."""
-    base_grip_torque: float = field(default=400.0,
+    base_grip_torque: float = field(default=600.0,
                                     metadata={"tune": (50.0, 400.0)})
     """Torque driving the base fingers out to `base_grip_x`.
 
     Above the plain finger torque because the base jaw is still squeezed on the
     body while this runs, so the fingers may have to push past it."""
-    push_torque: float = field(default=400.0, metadata={"tune": (100.0, 800.0)})
+    push_torque: float = field(default=600.0, metadata={"tune": (100.0, 800.0)})
     """Torque driving z down onto the plunger, for both plunge and draw.
 
     A descent, so it is deliberately not raised to z's `torque_min_to_move`:
@@ -205,6 +206,9 @@ class Config:
     timeout_margin: float = field(default=1.5, metadata={"tune": (1.0, 3.0)})
     """Margin on the deadline each row derives from its own travel, at the
     speed it commands."""
+    press_seconds: float = field(default=3.0, metadata={"tune": (0.5, 10.0)})
+    """How long a press (plunger or eject) commands its goal before giving up
+    and rising, regardless of whether it arrived. See the comment in `build`."""
 
 
 def build(hand: HandConfig, start_mm: torch.Tensor,
@@ -227,22 +231,28 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
     jaw_open = float(hand.upper(start_mm.device)[AUX_JAW]) / 2.0
     # The three rows the tail is built from, named once and listed flat below.
     #
-    # **A press is a plain `Move`: not `creep`, not `accept_stall`.** It was
-    # both, and the pair is why the fist stopped visibly short of the button and
-    # still reported ok. `accept_stall` ends the row at the first confirmed
-    # stall and takes `grace_ticks = 0` with it, which is the mirror risk
-    # `START_GRACE_TICKS` documents and does not fix: ten quiet ticks inside a
-    # joint's own stiction read as arrival. At the 3.68 mm/s creep that is
-    # 0.74 mm, so the row could finish before the stage had properly started.
+    # **A press is a timed `Hold`, not a `Move`.** `Move.accept_stall` was
+    # tried first and was not enough: it only retires the row early when
+    # `_stalled` confirms `CONFIRM_TICKS` of near-zero speed, and a plunger
+    # loaded against a spring can keep creeping under that threshold for the
+    # whole deadline instead of ever reading as stopped -- so the row still
+    # timed out, `bad` was still set, and a failed row retires the whole
+    # `Sequence` (see the note on `travel_effort` above). A retired `Sequence`
+    # keeps reissuing its last held action forever, so the fist sat driven at
+    # `push_torque` into whatever it hit until an operator killed it, instead
+    # of reaching the `rise` row that already follows every press. `Hold`
+    # sidesteps the detection question entirely: it commands the goal, and
+    # `ok` is purely `ticks >= press_seconds`, so the row always advances --
+    # arrival, a stall, or neither all end the same way after `press_seconds`.
     #
-    # Free, they arrive or they fault, and a fault prints the z they stuck at --
-    # the number that separates "the button is below z zero" from "the spring is
-    # stiffer than `push_torque`". Tolerance stays at the 1 mm default rather
-    # than `Z_TOLERANCE_MM`: on a press, five millimetres short is short.
-    plunger = Move(label="plunger", goal={Z: mm(Z, cfg.plunger_z)},
-                   effort=push_effort)
-    eject = Move(label="eject", goal={Z: mm(Z, cfg.eject_z)},
-                 effort=push_effort)
+    # The cost carried over from `accept_stall` is unchanged: a pipette's
+    # dispensed volume is set by how far the plunger goes, and this can no
+    # longer tell a full press from one that stopped short. Accepted for the
+    # same reason -- see the module docstring.
+    plunger = Hold(label="plunger", group=(Z,), goal=mm(Z, cfg.plunger_z),
+                   effort=push_effort, seconds=cfg.press_seconds)
+    eject = Hold(label="eject", group=(Z,), goal=mm(Z, cfg.eject_z),
+                 effort=push_effort, seconds=cfg.press_seconds)
     rise = Move(label="rise", goal={Z: top_z}, effort=lift,
                 tolerance_mm=Z_TOLERANCE_MM)
 
@@ -292,12 +302,6 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         Move(label="rest", goal={BASE: mm(BASE_LEFT, cfg.base_grip_x)},
              effort=base_grip),
         eject, rise,
-        eject, rise,
-     #    Hold(label="final", seconds=cfg.final_pause_s),
-        Move(label="open", goal={AUX_JAW: jaw_open}),
-        Move(label="height", goal={Z: mm(Z, cfg.knob_z), FINGERS: 0.0},
-             effort=lift, tolerance_mm=Z_TOLERANCE_MM),
-        
     ], hand=hand,
        start_mm=start_mm,
        travel_torque=cfg.travel_torque,

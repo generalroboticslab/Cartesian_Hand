@@ -54,12 +54,12 @@ class Config:
     that does not name its own inherits none -- see `tasks/__init__.py`."""
     sets_datum: bool = False
 
-    handle_offset: float = field(default=30.0, metadata={"tune": (5.0, 40.0)})
+    handle_offset: float = field(default=5.0, metadata={"tune": (5.0, 40.0)})
     """Height of the aux jaw's grip point above z zero at rest, in mm.
 
     The closed position for a normally-closed tool, the open one otherwise.
     Probing happens here, so it is also where both handles must be."""
-    travel: float = field(default=20.0, metadata={"tune": (5.0, 40.0)})
+    travel: float = field(default=25.0, metadata={"tune": (5.0, 40.0)})
     """Aux jaw travel away from `handle_offset` for one stroke, in mm."""
     normally_closed: bool = True
     """True for a tool that rests closed and opens under a stroke (scissors),

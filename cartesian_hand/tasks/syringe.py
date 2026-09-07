@@ -95,6 +95,12 @@ class Config:
     timeout_margin: float = field(default=1.5, metadata={"tune": (1.0, 3.0)})
     """Margin on the deadline each row derives from its own travel, at the speed
     it commands. Flat second counts expired 15 of `cap`'s 18 rows."""
+    jaw_settle_s: float = field(default=0.3, metadata={"tune": (0.0, 1.0)})
+    """Pause after the aux jaw opens or closes, before the next z move.
+    `Move`'s tolerance band and `Probe`'s contact can both be satisfied while
+    the jaw is still mechanically settling into that open or closed position;
+    without this, z starts a draw or a push while dof4 is still moving, which
+    reads as slip rather than a clean stroke."""
 
 
 def build(hand: HandConfig, start_mm: torch.Tensor,
@@ -121,6 +127,11 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
                    effort=squeeze_effort, loaded=True)
     pinch = Probe(label="pinch", group=AUX_JAW, goal=pinch_floor, creep=True,
                   grip=squeeze_effort)
+    # Every dof4 (aux jaw) row that a dof3 (z) row immediately follows needs
+    # this between them -- see `Config.jaw_settle_s`. "show" -> "reveal" is the
+    # one exception: `reveal_s` is already a multi-second hold, far past the
+    # jaw's own settling time.
+    jaw_settle = Hold(label="jaw settle", seconds=cfg.jaw_settle_s)
 
     return Sequence([
         Move(label="entry", goal={FINGERS: 0.0}),
@@ -133,8 +144,10 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         Probe(label="body", group=BASE_JAW, creep=True, grip=squeeze_effort),
         Loop(count=cfg.pull_strokes, rows=[
             release,
+            jaw_settle,
             Move(label="lower", goal={Z: clearance}),
             pinch,
+            jaw_settle,
             Move(label="pull", goal={Z: mm(Z, cfg.pull_z)}, effort=lift,
                  tolerance_mm=Z_TOLERANCE_MM),
         ]),
@@ -142,6 +155,7 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
              loaded=True),
         Hold(label="reveal", seconds=cfg.reveal_s),
         pinch,
+        jaw_settle,
         # Parking short is the normal outcome of a push capped at `push_torque`,
         # not a fault; without `accept_stall` the row waits out its deadline and
         # retires the sequence, so the seat never runs. `accept_stall` rather
@@ -150,9 +164,11 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         Move(label="push", goal={Z: clearance}, effort=push_effort,
              accept_stall=True),
         release,
+        jaw_settle,
         Move(label="rise", goal={Z: mm(Z, cfg.regrip_z)}, effort=lift,
              tolerance_mm=Z_TOLERANCE_MM),
         pinch,
+        jaw_settle,
         # Contact-based, not a fixed depth. A seat that reaches `clearance_z`
         # without stalling never felt the plunger -- a slipped grip and a
         # dispense are identical as positions, and `Probe` tells them apart.

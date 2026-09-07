@@ -157,6 +157,16 @@ class TwistPress:
 (RELEASE, RESET_FINGERS, SETTLE_FINGERS, REGRIP,
  PRESS, TURN, RELEASE_BEFORE_RETRACT, RETRACT, STROKE_DONE) = range(9)
 
+SERVO_NO_LOAD_RPM = 100.0
+"""Feetech HL-3915 rated top speed: 0.1 s per 60 degrees at 12 V, no load.
+
+`Sequence.__init__` pins every task's travel speed to this ceiling in
+`counts/s` (`SERVO_NO_LOAD_RPM / 60 * hand.counts_per_rev`), regardless of what
+`travel_speed` or `hand.gain_vector("speed")` would otherwise give it. It is a
+no-load rating: under load the servo's own torque cap, not this register,
+decides how fast it actually gets there.
+"""
+
 STUCK_SPEED_MM_S = 0.3
 """Below this a joint counts as not moving. One servo step at the slowest
 commanded rate is well above it, so ordinary travel never trips it."""
@@ -510,6 +520,12 @@ def twist_stroke(
     primitive = replace(primitive, elapsed_ticks=settle_elapsed)
     grip_ok = at_regrip & grip.succeeded
     press_ok = at_press & pressed.succeeded
+    # A press that neither reaches its depth nor confirms a stall within its
+    # own travel deadline is not a fault: it is still creeping into the
+    # thread under `reinsert_effort`'s deliberately low cap, and the turn
+    # that follows engages the thread and can carry z down the rest of the
+    # way itself. Time out into TURN rather than failing the stroke.
+    press_timed_out = at_press & presses & pressed.timed_out
     turn_ok = at_turn & turn.succeeded
     turn_reached = (((observation.position_mm - turn_goal).abs() <= 1.0)
                     | ~fingers[None, :]).all(dim=1)
@@ -517,12 +533,11 @@ def twist_stroke(
     retract_ok = at_retract & retracted.succeeded
     action = hold(action, grip_ok, jaw, grip_goal, grip_speed, grip_effort)
     transitioned = (release_ok | reset_ok | settle_ok | grip_ok | press_ok
-                    | turn_ok | retract_ok)
+                    | press_timed_out | turn_ok | retract_ok)
     failed_now = ((releasing & release.timed_out)
                   | (at_reset & reset.timed_out)
                   | settle_timed_out
                   | (at_regrip & grip.timed_out)
-                  | (at_press & presses & pressed.timed_out)
                   | (at_turn & turn.timed_out)
                   | (at_retract & presses & retracted.timed_out))
     # Five phases, not seven: the two z press phases (PRESS, RETRACT) are
@@ -542,7 +557,7 @@ def twist_stroke(
     next_phase = torch.where(settle_ok, REGRIP, next_phase)
     next_phase = torch.where(
         grip_ok, torch.where(presses, PRESS, TURN), next_phase)
-    next_phase = torch.where(press_ok, TURN, next_phase)
+    next_phase = torch.where(press_ok | press_timed_out, TURN, next_phase)
     next_phase = torch.where(
         turn_ok, torch.where(presses, RELEASE_BEFORE_RETRACT, STROKE_DONE),
         next_phase)
@@ -972,8 +987,9 @@ class Sequence:
                  approach_torque: float, approach_speed: float,
                  timeout_margin: float = 1.5, travel_speed: float | None = None,
                  stall_fallback: bool = True):
-        """`travel_speed` is counts/s for every free move; None takes the hand's
-        own `speed` gains.
+        """`travel_speed` is unused: every free move now runs at the servo's
+        rated no-load top speed, `SERVO_NO_LOAD_RPM`, regardless of this or the
+        hand's `speed` gains.
 
         **Keyword-only past `rows`.** Five of the eight are bare floats in bench
         units, and three of those are torques that differ only in which move
@@ -1031,10 +1047,12 @@ class Sequence:
         self.device = start_mm.device
         self.margin = timeout_margin
         self.creep_counts = approach_speed
-        self.travel_counts = (
-            hand.gain_vector("speed", self.device).to(torch.float32)
-            if travel_speed is None else
-            torch.full((self.n_dof,), float(travel_speed), device=self.device))
+        # Pinned to the servo's rated no-load top speed -- see
+        # `SERVO_NO_LOAD_RPM` -- so `travel_speed` no longer has any effect;
+        # kept as a parameter only so existing call sites still pass.
+        self.travel_counts = torch.full(
+            (self.n_dof,), SERVO_NO_LOAD_RPM / 60.0 * hand.counts_per_rev,
+            device=self.device)
         self.travel_speed = (self.travel_counts / hand.counts_per_mm)[
             None, :].expand(self.n, self.n_dof).clone()
         self.creep_speed = torch.full_like(
