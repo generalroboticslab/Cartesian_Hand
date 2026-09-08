@@ -17,11 +17,13 @@ Syringe (draw and dispense a syringe plunger)
 
 Pump dispenser (soap, lotion, spray-pump bottles)
     entry -> height -> clamp the bottle body (hard) -> close on the pump head (fast)
-      -> repeat(press to contact -> reset to full height)
+      -> repeat(press toward full close for press_seconds -> reset to full height)
 
 The pump dispenser is syringe's push-seat-release tail -- pinch/close, drive
-z down onto an object it stops short of, treat the stall as arrival -- run
-`num_strokes` times against a bottle instead of a barrel. It holds one grip
+z down toward its own hard stop for a fixed duration rather than to a point
+it stops short of, since stalling on the pump nozzle mid-stroke is the
+dispense, not a fault -- run `num_strokes` times against a bottle instead of
+a barrel. It holds one grip
 through every stroke instead of releasing and re-pinching between them like
 syringe's pull loop: neither jaw needs to clear anything but the object it
 is already on, so there is nothing to regrip. Two of syringe's numbers
@@ -77,10 +79,10 @@ class Config:
     sets_datum: bool = False
 
     num_strokes: float = field(default=3.0, metadata={"tune": (1.0, 10.0)})
-    """Pump strokes to run, rounded to the nearest integer. Each is a press
-    to contact followed by a reset to z's own full travel, including the
-    last -- the task ends with z back up, not sitting at `press_mm`."""
-    squeeze_torque: float = field(default=1000.0, metadata={"tune": (500.0, 1000.0)})
+    """Pump strokes to run, rounded to the nearest integer. Each is a timed
+    press toward the hard stop followed by a reset to z's own full travel,
+    including the last -- the task ends with z back up, not pressed down."""
+    squeeze_torque: float = field(default=1000.0, metadata={"tune": (0.0, 1000.0)})
     """Holding torque for the base jaw's grip on the bottle body -- maxed at
     the servo's own ceiling, not syringe's 100: the bottle has to stay put
     through every one of `num_strokes` downward pushes, which needs holding
@@ -89,14 +91,14 @@ class Config:
     """Torque the aux jaw closes onto the pump head with, and holds for
     every stroke afterward -- has to press through the head's own
     resistance to close at all, unlike syringe's plunger pinch."""
-    press_mm: float = field(default=15.0, metadata={"tune": (5.0, 30.0)})
-    """Z target for each down stroke. Not z's own hard stop (0): the pump
-    housing blocks the carriage well short of it, so a push reliably bottoms
-    out around 20-23mm on the bench before ever reaching 0. `press_mm` asks
-    for a bit more travel than that bottoming point, and `accept_stall` (see
-    `Move`) still lets a push that meets resistance early stop there instead
-    of forcing through it."""
-    push_torque: float = field(default=1000.0, metadata={"tune": (500.0, 1000.0)})
+    press_seconds: float = field(default=2.0, metadata={"tune": (0.5, 5.0)})
+    """How long each down stroke keeps driving z toward its own hard stop
+    (0), seconds. The stroke aims at a full close, not a point short of it --
+    the pump housing is expected to stop the carriage on the nozzle before z
+    gets there, and that stall is the dispense, not a fault. A `Hold` presses
+    for this whole duration regardless of when the stall is confirmed; an
+    `accept_stall` `Move` would instead retire the row the moment it is."""
+    push_torque: float = field(default=1000.0, metadata={"tune": (0.0, 1000.0)})
     """Torque driving z through the pump's own resistance, both down and
     back up. Maxed out, unlike syringe's deliberately gentle `push_torque`:
     a slow, soft stroke on a pump risks resetting the head through its own
@@ -163,13 +165,16 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
              accept_stall=True),
         Hold(label="jaw settle", seconds=cfg.jaw_settle_s),
         Loop(count=strokes, rows=[
-            # Parking short of `press_mm` is the normal outcome of a stroke
-            # against the pump's own resistance, not a fault -- see
-            # `Config.press_mm` and syringe's identical "push" row.
-            Move(label="press", goal={Z: mm(Z, cfg.press_mm)}, effort=push_effort,
-                 accept_stall=True),
+            # Aimed at z's own hard stop (0), i.e. a full close: stalling on
+            # the pump nozzle partway down is the normal, intended outcome of
+            # a stroke, not a fault -- see `Config.press_seconds`. `Hold`
+            # keeps commanding the push for the full duration no matter when
+            # the stall is confirmed, unlike an `accept_stall` `Move`, which
+            # would retire the row (and stop pushing) the moment it is.
+            Hold(label="press", group=Z, goal=0.0, effort=push_effort,
+                 seconds=cfg.press_seconds),
             # Every stroke resets to z's own full travel, including the
-            # last: the task ends with z back up, not sitting at `press_mm`.
+            # last: the task ends with z back up, not pressed down.
             # Same maxed-out `push_torque` as the press -- see
             # `Config.push_torque`. `Z_TOLERANCE_MM`, not the 1.0 mm default,
             # for the same reason as syringe's "pull"/"rise": z_max is not a

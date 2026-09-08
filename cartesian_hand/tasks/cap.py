@@ -57,6 +57,15 @@ glue stick: 10mm offset, 0 rev up 0 rev down, squeeze 500, lift 35, same for pen
 for culture tube: 10mm offset, lift 35, but squeeze and lift torque at default
 
 lightbulb: num_revs_up is 2.5 and same for down.
+
+petri dish and well plate, 0 offset, 0revs up, 0 revs down. 40torque squeeze 
+
+dropper bottle: set `dropper_bottle=True` (the "Dropper bottle" button in
+`tasks/dropper_bottle.py` does this). Same cap-opening twist, but once the cap
+breaks free the aux jaw squeezes and releases the dropper's bulb -- twice, once
+with the tip still in the bottle to draw liquid up, once after the pipette is
+lifted clear to dispense it -- before the cap is threaded back down. See the
+`dropper_bottle` branch in `build` for the row-by-row mechanism.
 """
 import math
 from dataclasses import dataclass, field
@@ -119,9 +128,15 @@ class Config:
     label: str = "Cycle cap"
     sets_datum: bool = False
 
-    cap_offset: float = field(default=10.0, metadata={"tune": (5.0, 40.0)})
+    dropper_bottle: bool = False
+    """Route the opened cap through the bulb-squeeze insert instead of
+    straight to the lift -- see the module docstring's "dropper bottle" entry.
+    Not a slider: `tasks/dropper_bottle.py` is the button that sets it, so
+    `cap` itself keeps its plain cap-cycling default."""
+
+    cap_offset: float = field(default=10.0, metadata={"tune": (0.0, 40.0)})
     """Height of the cap's top face above z zero, mm."""
-    num_revs_up: float = field(default=1, metadata={"tune": (0.0, 6.0)})
+    num_revs_up: float = field(default=1.0, metadata={"tune": (0.0, 6.0)})
     """Revolutions during the opening (unscrewing) twist."""
     num_revs_down: float = field(default=0.8, metadata={"tune": (0.0, 6.0)})
     """Revolutions during the closing (screwing down) twist."""
@@ -182,6 +197,26 @@ class Config:
     clamped to `cap_offset`, because tightening must not pull upward. Values
     that would travel down more than `MAX_DOWN_TRAVEL_MM` from `cap_offset`
     are floored the same way."""
+
+    bulb_offset: float = field(default=30.0, metadata={"tune": (5.0, 45.0)})
+    """Absolute z height of the dropper's bulb, mm -- the cap's own height
+    doesn't put the bulb where the jaw already sits. `dropper_bottle` only."""
+    bulb_lift_z: float = field(default=50.0, metadata={"tune": (5.0, 50.0)})
+    """Absolute z the pipette rises to, clear of the bottle, before the
+    dispensing squeeze. `dropper_bottle` only."""
+    bulb_release_mm: float = field(default=5.0, metadata={"tune": (1.0, 20.0)})
+    """How far past the grip the aux jaw opens to let go of the bulb, mm --
+    separate from `release_clearance`, which is the cap-twist's own release
+    and has no reason to move together with this one. `dropper_bottle` only."""
+    bulb_open_mm: float = field(default=4.0, metadata={"tune": (0.0, 40.0)})
+    """Absolute aux-jaw gap while carrying the bulb clear of the bottle
+    without squeezing it, mm. `dropper_bottle` only."""
+    bulb_squeeze_torque: float = field(default=80.0,
+                                       metadata={"tune": (10.0, 300.0)})
+    """Aux-jaw torque while squeezing the dropper bulb. Separate from
+    `squeeze_torque`: that one is bisected to hold a rigid cap without
+    slipping, and a soft bulb wants far less force to compress it than a
+    hard shell wants to be gripped by. `dropper_bottle` only."""
 
 
 def build(hand: HandConfig, start_mm: torch.Tensor,
@@ -266,26 +301,76 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         label="release",
         goal={AUX_JAW: lambda m: m.radius + release_clearance_mm},
         effort=squeeze_effort, loaded=True)
+    # Raising loaded z must clear this hand's measured gravity floor.
+    lift_move = Move(label="lift", goal={Z: mm(Z, cfg.lift_mm)}, effort=lift,
+                     tolerance_mm=2.0)
 
-    return Sequence([
-        Move(label="height", goal={Z: cap_height}),
-        Probe(label="probe", group=JAWS, creep=True,
-              measure={"radius": AUX_JAW}),
-        Hold(label="grip", group=JAWS, effort=squeeze_effort),
-        Loop(count=cycles, rows=[
-            Twist(label="open", jaw=AUX_JAW, left=AUX_LEFT, right=AUX_RIGHT,
-                  radius=lambda m: m.radius, span=stroke_span_up,
-                  grip=squeeze_effort, clearance=release_clearance_mm,
-                  measure={"radius": AUX_JAW}, count=strokes_up),
+    if cfg.dropper_bottle:
+        bulb_squeeze_effort = max(
+            cfg.bulb_squeeze_torque,
+            float(hand.gain_vector("torque_min_to_move")[AUX_JAW])) / 1000.0
+        bulb_offset_z = mm(Z, cfg.bulb_offset)
+        bulb_lift_z = mm(Z, cfg.bulb_lift_z)
+        bulb_open_target = mm(AUX_JAW, cfg.bulb_open_mm)
+        # Reused for both the priming release (grip-relative, right after the
+        # twist) and the final let-go (diameter-relative, clearing the whole
+        # cap before z carries the jaw back past it) -- see the two Move rows
+        # below that build on it.
+        bulb_release = Move(
+            label="release bulb grip",
+            goal={AUX_JAW: lambda m: m.radius + cfg.bulb_release_mm})
+        squeeze_bulb = Probe(label="squeeze bulb", group=AUX_JAW, creep=True,
+                             grip=bulb_squeeze_effort)
+        bulb_open = Move(label="bulb open", goal={AUX_JAW: bulb_open_target})
+        # The twist's last stroke leaves the fingers wherever its last turn
+        # stroke put them (one out, one in) -- centred, a squeeze lands even
+        # on both sides of the bulb instead of mostly on one finger.
+        centre_fingers = Move(label="centre fingers",
+                              goal={AUX: finger_span_mm / 2})
+        # The twist's last stroke ends gripping the cap (mid-turn), not
+        # centred and released like the plain flow. No `regrip`: this branch
+        # never lifts by the fingers' grip on the cap, so it has no reason to
+        # re-close the jaw on it first.
+        handling = [
+            bulb_release,
+            # The jaw's cap-turning height is not the bulb's -- rise to meet
+            # it before closing on it.
+            Move(label="reach bulb", goal={Z: bulb_offset_z}, effort=lift,
+                 tolerance_mm=2.0),
+            centre_fingers,
+            squeeze_bulb,
+            # Reopening with the tip still in the bottle draws liquid up the
+            # pipette; this is priming, not the dispense -- that is the
+            # second `squeeze_bulb` below, once the pipette is clear of the
+            # bottle.
+            bulb_release,
+            bulb_open,
+            Move(label="lift bulb", goal={Z: bulb_lift_z}, effort=lift,
+                 tolerance_mm=2.0),
+            # Squeezes again from wherever "bulb open" left the jaw -- no
+            # reopening first. This stroke is the dispense, not a fresh grip
+            # search. Fingers are still centred from above -- nothing moved
+            # them since.
+            squeeze_bulb,
+            bulb_open,
+            Move(label="lower bulb", goal={Z: bulb_offset_z},
+                 effort=reinsert_effort, accept_stall=True,
+                 tolerance_mm=PUT_BACK_TOL_MM, creep=True),
+            # `m.radius` is a jaw-centre-to-object distance, so clearing the
+            # cap's full width needs the diameter, not the radius, past the
+            # jaw's own opening.
+            Move(label="bulb let go",
+                 goal={AUX_JAW: lambda m: 2 * m.radius + cfg.bulb_release_mm}),
+        ]
+    else:
+        handling = [
             release,
             Move(label="centre", goal={AUX: finger_span_mm / 2}),
             Hold(label="centre hold", group=AUX, goal=finger_span_mm / 2,
                  seconds=0.2),
             Probe(label="regrip", group=AUX_JAW, creep=True,
                   grip=squeeze_effort),
-            # Raising loaded z must clear this hand's measured gravity floor.
-            Move(label="lift", goal={Z: mm(Z, cfg.lift_mm)}, effort=lift,
-                 tolerance_mm=2.0),
+            lift_move,
             # The aux jaw keeps holding the cap while its two fingers carry it
             # back. Closing does not start until this move has arrived.
             # Wider tolerance than the 1 mm default: a finger carrying the cap
@@ -297,6 +382,19 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
             # Return to the exact centred finger position used for the lift so
             # the held cap is above the bottle again before z descends.
             Move(label="cap align", goal={AUX: finger_span_mm / 2}),
+        ]
+
+    return Sequence([
+        Move(label="height", goal={Z: cap_height}),
+        Probe(label="probe", group=JAWS, creep=True,
+              measure={"radius": AUX_JAW}),
+        Hold(label="grip", group=JAWS, effort=squeeze_effort),
+        Loop(count=cycles, rows=[
+            Twist(label="open", jaw=AUX_JAW, left=AUX_LEFT, right=AUX_RIGHT,
+                  radius=lambda m: m.radius, span=stroke_span_up,
+                  grip=squeeze_effort, clearance=release_clearance_mm,
+                  measure={"radius": AUX_JAW}, count=strokes_up),
+            *handling,
             # Return to the height where the cap was first gripped. Thread
             # engagement happens in the closing Twist's downward press.
             Move(label="put back", goal={Z: cap_height},
