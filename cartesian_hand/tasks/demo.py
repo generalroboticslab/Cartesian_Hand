@@ -1,9 +1,8 @@
-"""Fixed choreography: sweep every DOF, then chase a wave across the fingers.
+"""Fixed choreography: sweep every DOF, then run a continuous wave across the fingers.
 
     close all -> open all
-      -> close DOFs one at a time (aux fingers, base fingers, jaws, z)
-      -> open jaws and z to mid-travel
-      -> repeat(chase: fingers open and close in a rolling overlap)
+      -> close fingers, half-open jaws and z
+      -> repeat(continuous wave: fingers open and close in a rolling overlap)
       -> close all -> open all -> mid all
 
 A visual demo, not a manipulation task: every goal is free space, so there is
@@ -23,14 +22,19 @@ acceleration is one hand-wide gain with no per-row override, and a `Move` is
 closed-loop -- it blocks until it reaches its goal or times out, not for a
 fixed duration. This file has no equivalent fields.
 
-**The wave is a chase, not a stagger.** The old `_wave` streamed an
-interpolated setpoint every tick, so four fingers could each be mid-stroke at
-once, staggered by a fraction of one leg. `Move` rows are discrete
-goal-and-wait phases with no per-tick setpoint stream, so the closest
-equivalent here is a handful of frames: open one finger, then on each later
-frame open the next while closing the one before it. It reads as a rolling
-wave across `WAVE_DOFS` but is four discrete positions per cycle, not a
-continuous sweep.
+**The wave approximates continuous motion with many small steps, not a few
+named waypoints.** The old `_wave` streamed an interpolated setpoint every
+tick. `Move` rows have no per-tick setpoint channel, but nothing requires a
+`Hold` between them either: each DOF's own open->close leg pair is split into
+`WAVE_STEPS_PER_LEG` steps, and DOF `i` starts its leg one step after DOF
+`i - 1` starts its own, so several `WAVE_DOFS` are mid-leg on the same frame.
+Frames chain straight into each other with no dwell, so nothing pauses the
+motion between them. `WAVE_STEPS_PER_LEG` is sized to stay clear of `Move`'s
+default 1 mm arrival tolerance even at `open_fraction`'s tunable floor (0.5)
+-- see the constant's own comment -- so every step is real travel rather than
+an instant no-op from a goal already inside tolerance. Still discrete steps,
+not a continuous stream, but small and un-paused enough to read as one
+continuous ripple rather than fingers handing off to each other.
 
 **`open_fraction`, not `hand.upper()`.** `HandConfig.upper` warns not to
 command it: the travel table is CAD and reads high, so asking for the exact
@@ -43,20 +47,24 @@ from dataclasses import dataclass, field
 import torch
 
 from ..config import (AUX_JAW, AUX_LEFT, AUX_RIGHT, BASE_JAW, BASE_LEFT,
-                      BASE_RIGHT, HandConfig, LABELS, Z)
+                      BASE_RIGHT, HandConfig, Z)
 from ..primitives import Hold, Loop, Move, Sequence
 
 ALL_DOFS = (BASE_JAW, BASE_LEFT, BASE_RIGHT, Z, AUX_JAW, AUX_LEFT, AUX_RIGHT)
 
-# Mechanical order for the one-at-a-time close: aux fingers, base fingers,
-# jaws, z. A wrong order here closes a jaw on a finger.
-CLOSE_ORDER = (AUX_RIGHT, AUX_LEFT, BASE_RIGHT, BASE_LEFT, AUX_JAW, BASE_JAW, Z)
-
-# Jaws and z, opened to mid-travel after the ordered close.
+# Jaws and z, opened to mid-travel while the fingers close for the wave.
 HALF_OPEN_DOFS = (BASE_JAW, Z, AUX_JAW)
 
-# Base and aux fingers, chased in this order after the jaws/z are parked.
+# Base and aux fingers, waved in this order.
 WAVE_DOFS = (BASE_LEFT, BASE_RIGHT, AUX_RIGHT, AUX_LEFT)
+
+# Steps per leg (closed->open, or open->closed) of the wave. Each DOF starts
+# its own leg one step after the DOF before it -- see the module docstring's
+# wave note. Bounded above by `Move`'s default 1 mm arrival tolerance: at
+# `open_fraction`'s tunable floor (0.5) the shortest finger travel is
+# ~27.5 mm, and 15 steps keeps each one at ~1.8 mm, safely past 1 mm so a
+# step is genuine travel rather than a goal already inside tolerance.
+WAVE_STEPS_PER_LEG = 15
 
 
 @dataclass
@@ -73,7 +81,7 @@ class Config:
     """Seconds to pause after each move lands, so a phase is visible before
     the next one starts."""
     cycles: float = field(default=1.0, metadata={"tune": (0.0, 10.0)})
-    """Wave chase passes over `WAVE_DOFS`. Zero repeats until the task is
+    """Wave passes over `WAVE_DOFS`. Zero repeats until the task is
     stopped (disarm torque in Studio, or Ctrl-C headless), the same
     convention `cap` and `scissors` use for their own `cycles`."""
     travel_torque: float = field(default=50.0, metadata={"tune": (30.0, 200.0)})
@@ -86,40 +94,43 @@ class Config:
 
 def build(hand: HandConfig, start_mm: torch.Tensor,
           cfg: Config | None = None) -> Sequence:
-    """Sweep every DOF through its range, then chase a wave over the fingers."""
+    """Sweep every DOF through its range, then run a continuous wave over the fingers."""
     cfg = cfg or Config()
     open_mm = {dof: hand.travel_mm[dof] * cfg.open_fraction for dof in ALL_DOFS}
     mid_mm = {dof: open_mm[dof] / 2 for dof in ALL_DOFS}
     half_open_mm = {dof: open_mm[dof] / 2 for dof in HALF_OPEN_DOFS}
     cycles = float("inf") if cfg.cycles <= 0 else max(1, round(cfg.cycles))
 
-    close_one_at_a_time = []
-    for dof in CLOSE_ORDER:
-        close_one_at_a_time.append(
-            Move(label=f"close {LABELS[dof]}", goal={dof: 0.0}))
-        close_one_at_a_time.append(Hold(seconds=cfg.dwell))
+    # Continuous wave: each DOF's own open->close leg pair is split into
+    # WAVE_STEPS_PER_LEG steps, and DOF i starts its leg one step after DOF
+    # i - 1 starts its own; see the module docstring's wave note. Frames chain
+    # straight into the next Move with no Hold between them, so nothing
+    # pauses the motion.
+    wave_leg_steps = 2 * WAVE_STEPS_PER_LEG
+    wave_frame_count = wave_leg_steps + len(WAVE_DOFS) - 1
 
-    # Rolling chase: open the next finger while closing the one before it, so
-    # at most two fingers move on any one frame -- the discrete stand-in for
-    # the old continuous stagger; see the module docstring.
+    def wave_frac(step: int) -> float:
+        """Fraction open (0 -> 1 -> 0) at `step` steps into one DOF's leg pair."""
+        if step < WAVE_STEPS_PER_LEG:
+            return (step + 1) / WAVE_STEPS_PER_LEG
+        return 1 - (step - WAVE_STEPS_PER_LEG + 1) / WAVE_STEPS_PER_LEG
+
     wave = []
-    for i, dof in enumerate(WAVE_DOFS):
-        goal = {dof: open_mm[dof]}
-        if i > 0:
-            goal[WAVE_DOFS[i - 1]] = 0.0
-        wave.append(Move(label=f"wave open {LABELS[dof]}", goal=goal))
-        wave.append(Hold(seconds=cfg.dwell))
-    wave.append(Move(label=f"wave close {LABELS[WAVE_DOFS[-1]]}",
-                      goal={WAVE_DOFS[-1]: 0.0}))
-    wave.append(Hold(seconds=cfg.dwell))
+    for t in range(wave_frame_count):
+        goal = {}
+        for i, dof in enumerate(WAVE_DOFS):
+            local = t - i
+            if 0 <= local < wave_leg_steps:
+                goal[dof] = wave_frac(local) * open_mm[dof]
+        wave.append(Move(label=f"wave frame {t}", goal=goal))
 
     return Sequence([
         Move(label="close all", goal={ALL_DOFS: 0.0}),
         Hold(seconds=cfg.dwell),
         Move(label="open all", goal=open_mm),
         Hold(seconds=cfg.dwell),
-        *close_one_at_a_time,
-        Move(label="half open jaws and z", goal=half_open_mm),
+        Move(label="close fingers, half-open jaws and z",
+             goal={**{dof: 0.0 for dof in WAVE_DOFS}, **half_open_mm}),
         Hold(seconds=cfg.dwell),
         Loop(count=cycles, rows=wave),
         Move(label="close all", goal={ALL_DOFS: 0.0}),

@@ -55,6 +55,8 @@ bottle250 needs 25mm offset cap instead of 10 for in hand off table, 1 revs up, 
 glue stick: 10mm offset, 0 rev up 0 rev down, squeeze 500, lift 35, same for pen with cap
 
 for culture tube: 10mm offset, lift 35, but squeeze and lift torque at default
+
+lightbulb: num_revs_up is 2.5 and same for down.
 """
 import math
 from dataclasses import dataclass, field

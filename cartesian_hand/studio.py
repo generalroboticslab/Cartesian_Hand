@@ -120,6 +120,7 @@ Importing this module requires the `legged_env_v2` sibling checkout for the
 default model path only. Set `LEGGED_ENV_ROOT` if it is not beside this repo.
 """
 
+import datetime
 import os
 import time
 from collections.abc import Sequence
@@ -135,8 +136,8 @@ import viser
 
 from . import compose, motions
 from .config import (AUX_FINGERS, AUX_JAW, BASE_FINGERS, BASE_JAW, CALIB_PATH,
-                     DEFAULT_HAND, HANDS, LABELS, Z, HandConfig, get_hand,
-                     identify, load_offsets, save_offsets)
+                     DEFAULT_HAND, HANDS, LABELS, Z, HandConfig, append_result,
+                     get_hand, identify, load_offsets, save_offsets)
 from .mjcf import MM_PER_M, mjcf_path, narrow_ctrlrange, qpos_addrs
 from .policy import Policy, PolicyRunner
 from .servo import open_driver
@@ -427,6 +428,11 @@ def finish(name: str, runner: motions.TaskRunner, cfg: HandConfig,
     `save_offsets` is the one irreversible step in the loop -- a stop recorded
     from a DOF that timed out mid rail puts the origin at an arbitrary place and
     costs a bench cycle to notice.
+
+    A task opting into `Config.save_json` (`tasks.result_path`) gets its result
+    appended to that file too, success or failure alike -- unlike the datum,
+    this is not irreversible, and a bench measurement that stalled short is
+    still a real data point about the joint's ceiling.
     """
     value, ok, why = runner.result
     # Always, not only on failure. A task can return ok=True having spent a
@@ -436,6 +442,16 @@ def finish(name: str, runner: motions.TaskRunner, cfg: HandConfig,
     # they are worth a line whether or not the task calls the run a success.
     for line in runner.slow_rows(LABELS):
         print(f"[{cfg.name}] {name}: {line}")
+    path = tasks.result_path(name)
+    if path:
+        append_result(path, name, cfg.name, {
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "labels": list(LABELS),
+            "value": value.tolist(),
+            "ok": ok.tolist(),
+            "why": why,
+        })
+        print(f"[{cfg.name}] {name}: result appended to {path}")
     if not bool(ok.all()):
         print(f"[{cfg.name}] {name}: {why}")
         return zero, False

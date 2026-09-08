@@ -84,7 +84,7 @@ Nothing here needs z placed to a millimetre: `height` only has to put the base
 jaw across the body and the aux jaw around the knob, and the rise only has to
 clear the knob. What the 1 mm default does buy is a fault every time the stage
 parks slightly short, which is one thing this task has already failed on. Same
-constant and same reasoning as `syringe.Z_TOLERANCE_MM`."""
+constant and same reasoning as `pump.Z_TOLERANCE_MM`."""
 
 CLOSED_TOL_MM = 10.0
 """Arrival tolerance for the aux side shutting into a fist, mm.

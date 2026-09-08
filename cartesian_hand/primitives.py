@@ -836,6 +836,14 @@ class Row:
     seconds: float | None = None
     """Deadline override. None derives one from the DOFs the row moves, at the
     speed it commands."""
+    speed_scale: float = 1.0
+    """Multiply this row's commanded speed (creep or travel) by this factor.
+
+    `creep` and travel are each one register shared by every row that sets
+    it, so a row that must move faster or slower than every other row on the
+    same register -- without changing that register itself, which would move
+    every one of them -- scales its own commanded speed here instead. 1.0 for
+    every row that has no reason to differ."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -846,6 +854,15 @@ class Move(Row):
     tolerance_mm: float = 1.0
     accept_stall: bool = False
     """Also accept a confirmed stop short of the goal, without changing effort."""
+    measure: dict[str, int] | None = None
+    """`{"z_pos": Z}`. Lets a `Loop` around this row read back where it
+    actually stopped (arrival or an accepted stall alike) and aim the next
+    iteration's goal from there -- a `Move` re-issued a short step at a time
+    instead of driven straight to a distant goal in one, which is what a crawl
+    against resistance needs: each step's target comes from where the last
+    one actually landed, not from a plan made before either one ran, so a
+    stiction-driven overshoot on one step is accounted for rather than
+    compounding into the next."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -1317,7 +1334,8 @@ class Sequence:
         return dofs, out
 
     def _speed(self, row: Row) -> torch.Tensor:
-        return self.creep_speed if row.creep else self.travel_speed
+        base = self.creep_speed if row.creep else self.travel_speed
+        return base if row.speed_scale == 1.0 else base * row.speed_scale
 
     def _effort(self, row: Row, measures: Measures, approach: bool = False,
                 override: Value | None = None) -> torch.Tensor:

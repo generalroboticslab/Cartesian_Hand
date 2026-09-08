@@ -59,13 +59,14 @@ not versioned beside the task variant it describes.
 """
 import dataclasses
 import importlib
+import os
 import pkgutil
 from pathlib import Path
 from types import ModuleType
 
 import torch
 
-from ..config import HandConfig
+from ..config import CALIB_PATH, HandConfig
 from ..motions import Task
 from ..policy import Policy
 
@@ -146,6 +147,22 @@ def sets_datum(name: str) -> bool:
     zeroing variant in its own file still installs its calibration.
     """
     return bool(getattr(config(name), "sets_datum", False))
+
+
+def result_path(name: str) -> str | None:
+    """Where this task's result should be appended as JSON, or None to only
+    print it -- the file-persistence analog of `sets_datum` for a task whose
+    result is a bench measurement rather than a calibration.
+
+    Opt-in via `Config.save_json`. A bare filename resolves beside the
+    calibration file: bench data is per-machine the same way
+    `zero_offsets.json` is, and keeping the two side by side is one less path
+    to remember.
+    """
+    path = getattr(config(name), "save_json", None)
+    if path and not os.path.isabs(path):
+        path = os.path.join(os.path.dirname(CALIB_PATH), path)
+    return path
 
 
 def buttons() -> list[tuple[str, str]]:

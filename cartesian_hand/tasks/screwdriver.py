@@ -1,6 +1,6 @@
 """Turn a manual screwdriver, sizing the handle grip from contact.
 
-    entry -> settle -> close the base jaw on the shaft (taut, never squeezed)
+    entry -> close the base jaw on the shaft (taut, never squeezed)
       -> probe the handle and squeeze it
       -> repeat(release -> reset fingers -> re-grip -> [press z] -> turn
                 -> [back z off])
@@ -18,6 +18,10 @@ rides up out of the screw.
 Every goal is absolute in the hand's millimetre frame, so the hand must be
 zeroed first -- `tool_offset` is a height above the z hard stop.
 
+No settle wait after entry: `close_until_contact` is closed-loop on measured
+position, same as `cap`, so a hand still moving cannot register contact --
+there is nothing for a fixed pause to buy here.
+
 No hardware results for *this* transcription yet: the sequence is validated, the
 port of it is not.
 """
@@ -28,7 +32,7 @@ import torch
 
 from ..config import (AUX_FINGERS, AUX_JAW, AUX_LEFT, AUX_RIGHT, BASE_FINGERS,
                       BASE_JAW, HandConfig, Z)
-from ..primitives import (Hold, Move, Probe, Sequence, Twist, TwistPress,
+from ..primitives import (Move, Probe, Sequence, Twist, TwistPress,
                           lift_effort, strokes_for_revolutions)
 
 JAWS = (BASE_JAW, AUX_JAW)
@@ -107,8 +111,6 @@ class Config:
     down_stroke_z: float = field(default=20.0, metadata={"tune": (0.0, 45.0)})
     """Z height each cw stroke presses to and holds through the turn, in mm.
     Reset to `tool_offset` after every stroke. Unused when `cw` is False."""
-    settle_s: float = field(default=1.0, metadata={"tune": (0.1, 3.0)})
-    """Pause after the entry move, before probing."""
     timeout_margin: float = field(default=1.5, metadata={"tune": (1.0, 3.0)})
     """Margin on the deadline each row derives from its own travel, at the
     speed it commands."""
@@ -153,7 +155,6 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         # lift floor, which is far too much force to also put behind a jaw
         # sweeping through free space.
         Move(label="height", goal={Z: tool_height}, effort=lift_effort(hand)),
-        Hold(label="settle", seconds=cfg.settle_s),
         # The tip closes onto the shaft and stops. Never squeezed harder, and it
         # holds this taut grip for the whole task.
         Probe(label="tip", group=BASE_JAW, creep=True, grip=tip_effort),

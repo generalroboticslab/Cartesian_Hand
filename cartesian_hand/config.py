@@ -538,6 +538,33 @@ def save_offsets(name: str, offsets: Sequence[int],
     return path
 
 
+def append_result(path: str, task_name: str, hand_name: str, data: dict) -> str:
+    """Append one bench run's `data` under `[task_name][hand_name]`, a list.
+
+    The generic half of a task's opt-in result log (see `tasks.result_path`):
+    nested by task then hand so one file can hold several bench tasks and both
+    hands without one run's write clobbering another's, and a list per hand so
+    repeated runs accumulate -- the point of a bench log -- rather than
+    overwrite. Mirrors `save_offsets`: a corrupt file must not cost a fresh
+    bench run, so an unreadable existing file is renamed `.bad` rather than
+    failing the write.
+    """
+    results = {}
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                results = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            backup = path + ".bad"
+            os.replace(path, backup)
+            print(f"Existing {path} was unreadable, moved to {backup}")
+    results.setdefault(task_name, {}).setdefault(hand_name, []).append(data)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(results, f, indent=2)
+    return path
+
+
 def load_offsets(name: str, n_dof: int,
                  path: str = CALIB_PATH) -> list[int] | None:
     """Saved offsets for `name`, or None if missing, wrong length, or unreadable.
