@@ -21,6 +21,37 @@ It dissolves one disagreement with the figure for free: the figure's *dual grasp
 panel runs its jaws LO -> HI (opening) while carrying inward "grasp" arrows. Both
 directions run here, so there is nothing to pick.
 
+Matched to the paper's CLIPS, not only to its figure
+----------------------------------------------------
+`animate_primitive.py` renders the same twelve panels as video, and three of its
+decisions are about motion rather than about pose -- so the still figure cannot
+carry them and this task has to. All three are visible on camera.
+
+**`SEQUENCE`: the squeeze panels are ORDERED.** One static end pose is the same
+picture whether the jaw shut before the fingers slid or with them, so the figure
+cannot say; the clip can, and does. The jaw closes ON the object FIRST, and only
+then does the rest move -- sliding while the jaw is still opening is pushing
+nothing. A sequenced panel is two chained `Move` rows with NO `Hold` between
+them: a `Move` is closed-loop and comes to rest on its goal, which is the same
+beat the clip's per-segment easing produces.
+
+**The return keeps the grip.** A sequenced panel's return stops at the end of its
+first phase, so the hand un-pushes without letting go -- undoing an ENABLING
+phase would show the hand dropping the object, which is not part of the
+primitive. The clip's `return_to` does exactly this and then loops on a cut. This
+is one continuous tour, so the release happens anyway, as the next panel's start
+move. That is the same thing rendered honestly by a hand that cannot cut.
+
+**One speed, the clip's.** Every `Move` runs at `speed_mm_s` via
+`speed_scale_for`; without it the real hand runs at the servo's rated top speed
+and the two videos cannot be played side by side. See that function for why the
+timeout margin is divided by the same scale.
+
+*Not* matched: the clip pads all twelve to one length so a grid of them stays in
+step. This is one recording rather than twelve files, and a `Move`'s duration is
+closed-loop settle time that no dwell arithmetic can predict -- padding would be
+precise-looking arithmetic that is not precise.
+
 `PANELS` is transcribed from the accompanying paper's primitive figure
 ------------------------------------------------------------------
 Same twelve entries, same driven joints, same start/end fractions, with the MJCF
@@ -67,7 +98,7 @@ import torch
 
 from ..config import (AUX_JAW, AUX_LEFT, AUX_RIGHT, BASE_JAW, BASE_LEFT,
                       BASE_RIGHT, HandConfig, N_DOF, Z)
-from ..primitives import Hold, Move, Sequence
+from ..primitives import Hold, Move, Sequence, speed_scale_for
 
 # Fractions of a DOF's own reachable range, resolved by `reach`. Mirrors
 # `plot_primitives.py`'s LO/HI/MID/GRIP so the two tables can be read side by side.
@@ -106,6 +137,25 @@ PANELS = [
      {AUX_JAW: (HI, GRIP), AUX_LEFT: (LO, HI), AUX_RIGHT: (LO, HI)}),
 ]
 
+# Panels whose DOFs run IN ORDER rather than together, and which DOFs lead. The
+# rest of the panel follows once these have arrived. Transcribed from
+# `animate_primitive.SEQUENCE`; see the module docstring for why.
+#
+# All three lead with the same DOF, and it is still written as a table of DOFs
+# rather than as a list of titles: the ordering is a claim about WHICH motion
+# enables the other, and "the aux jaw closes first" is the claim. A set of titles
+# would leave that to be inferred from the panel, which is how a fourth panel
+# added later gets the wrong lead without anyone noticing.
+#
+# Squeeze-twist is here because the clip sequences it. The STILL figure does not,
+# deliberately -- it describes that panel as closing while it lifts, because a
+# still cannot show an order at all.
+SEQUENCE = {
+    "squeeze-lift/lower (2+3)": (AUX_JAW,),
+    "squeeze-twist lift/lower (2+3+4)": (AUX_JAW,),
+    "squeeze-push/pull (1+1+2)": (AUX_JAW,),
+}
+
 
 @dataclass
 class Config:
@@ -129,6 +179,10 @@ class Config:
     """How long the static-hold panel holds. Its own field because it is the
     panel's whole content, not a pause between two things."""
 
+    speed_mm_s: float = field(default=65.0, metadata={"tune": (10.0, 83.0)})
+    """Commanded speed of every move. 65 is `animate_primitive.SPEED`, which the
+    simulated clips are timed by."""
+
     travel_torque: float = field(default=50.0, metadata={"tune": (30.0, 200.0)})
     approach_torque: float = field(default=150.0, metadata={"tune": (50.0, 300.0)})
     approach_speed: float = field(default=800.0, metadata={"tune": (25.0, 800.0)})
@@ -136,12 +190,22 @@ class Config:
     approach torque or speed. Carried only because `Sequence` takes them."""
 
     timeout_margin: float = field(default=1.5, metadata={"tune": (1.0, 3.0)})
+    """Against the move's own duration at `speed_mm_s`, not at the register's
+    speed -- `build` divides by the scale, see `speed_scale_for`."""
 
 
 def build(hand: HandConfig, start_mm: torch.Tensor,
           cfg: Config | None = None) -> Sequence:
-    """Entry point for `--task primitive_tour`. Twelve panels, six rows each."""
+    """Entry point for `--task primitive_tour`. Twelve panels: six rows each,
+    seven where the panel is sequenced, two for the static hold."""
     cfg = cfg or Config()
+    scale = speed_scale_for(hand, cfg.speed_mm_s)
+    # A title that no longer matches a panel would silently un-sequence it: the
+    # tour still runs, the squeeze panels simply go back to closing while they
+    # push, which is the thing `SEQUENCE` exists to stop.
+    titles = {label for label, _panel in PANELS}
+    assert set(SEQUENCE) <= titles, \
+        f"SEQUENCE names panels that do not exist: {set(SEQUENCE) - titles}"
 
     def reach(dof: int, fraction: float) -> float:
         """`fraction` of DOF `dof`'s reachable range, in mm.
@@ -159,23 +223,43 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         fractions.update({dof: pair[side] for dof, pair in panel.items()})
         return {dof: reach(dof, f) for dof, f in fractions.items()}
 
+    def move(label: str, goal: dict[int, float]) -> Move:
+        return Move(label=label, goal=goal, speed_scale=scale)
+
     rows = []
     for label, panel in PANELS:
         start, end = pose(panel, 0), pose(panel, 1)
         if not panel:
-            rows += [Move(label=label, goal=start),
-                     Hold(seconds=cfg.hold_seconds)]
+            rows += [move(label, start), Hold(seconds=cfg.hold_seconds)]
             continue
-        rows += [Move(label=f"{label}: start", goal=start),
-                 Hold(seconds=cfg.dwell),
-                 Move(label=label, goal=end),
-                 Hold(seconds=cfg.dwell),
-                 Move(label=f"{label}: return", goal=start),
-                 Hold(seconds=cfg.dwell)]
+        lead = SEQUENCE.get(label)
+        rows += [move(f"{label}: start", start), Hold(seconds=cfg.dwell)]
+        if lead is None:
+            rows += [move(label, end), Hold(seconds=cfg.dwell),
+                     move(f"{label}: return", start), Hold(seconds=cfg.dwell)]
+            continue
+        # The enabling phase, and the pose the return comes back to rather than
+        # all the way to `start`. No Hold after it: the next Move starts from
+        # rest either way, and a pause here would read as a separate gesture
+        # instead of as the first half of one.
+        assert set(lead) <= set(panel), \
+            f"{label}: leads with {lead}, which the panel does not drive"
+        gripped = {**start, **{dof: end[dof] for dof in lead}}
+        rows += [move(f"{label}: grip", gripped),
+                 move(label, end), Hold(seconds=cfg.dwell),
+                 move(f"{label}: return", gripped), Hold(seconds=cfg.dwell)]
+
+    # `isinstance`, not `getattr(row, "goal")` -- a `Hold` carries a `goal` too,
+    # and it is a bare float, so the duck-typed version quietly checks nothing.
+    assert all(0.0 <= mm <= hand.travel_mm[dof] for row in rows
+               if isinstance(row, Move) for dof, mm in row.goal.items()), \
+        "a goal is off the travel table -- a carriage would leave its rail"
 
     return Sequence(rows, hand=hand,
                     start_mm=start_mm,
                     travel_torque=cfg.travel_torque,
                     approach_torque=cfg.approach_torque,
                     approach_speed=cfg.approach_speed,
-                    timeout_margin=cfg.timeout_margin)
+                    # A scaled row keeps its unscaled deadline; see
+                    # `speed_scale_for`.
+                    timeout_margin=cfg.timeout_margin / scale)

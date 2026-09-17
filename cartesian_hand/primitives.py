@@ -810,6 +810,34 @@ def lift_effort(hand: HandConfig, register: float = 0.0) -> float:
     return max(register, float(hand.gain_vector("torque_min_to_move")[Z])) / 1000.0
 
 
+def speed_scale_for(hand: HandConfig, mm_s: float) -> float:
+    """`Row.speed_scale` that runs a free move at `mm_s` instead of flat out.
+
+    `Sequence` pins every free move to `SERVO_NO_LOAD_RPM` and ignores
+    `travel_speed`, so a task that must move at a NAMED rate -- the three demo
+    tours, which are the hardware counterparts of the paper's clips and are
+    paced to match them -- has only the per-row scale to do it with.
+
+    **A scaled row keeps its unscaled deadline.** `Sequence._deadline` budgets
+    from `travel_counts`, the register, which `speed_scale` never touches: a
+    row at half speed takes twice as long against exactly the same timeout. The
+    default `timeout_margin` of 1.5 covers a scale of 0.67 and no less, and
+    under it the row expires, `failed` folds into `done`, and every row after it
+    silently never runs -- `cap.py`'s bug, reached by a different road. A task
+    naming a speed divides its `timeout_margin` by the scale.
+
+    Raises above 1.0 rather than returning one, because there is nothing above
+    the rated speed to reach: the register would simply clip and the clip would
+    play slower than it says it does, which is the kind of wrong that survives
+    being watched.
+    """
+    top_mm_s = SERVO_NO_LOAD_RPM / 60.0 * hand.counts_per_rev / hand.counts_per_mm
+    if mm_s > top_mm_s:
+        raise ValueError(f"{mm_s:.1f} mm/s is past this hand's rated "
+                         f"{top_mm_s:.1f} mm/s; the servo cannot be asked for it")
+    return mm_s / top_mm_s
+
+
 # ── rows ─────────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True, slots=True, kw_only=True)
