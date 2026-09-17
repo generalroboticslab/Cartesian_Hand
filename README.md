@@ -3,7 +3,7 @@
 **In-hand manipulation with all-linear fingers.**
 
 <div align="left">
-  <img src="media/hero.gif" width="640">
+  <img src="media/hero.webp" width="640">
 </div>
 
 Two parallel grippers hold different parts of an object. Four translating
@@ -26,7 +26,7 @@ batched GPU MuJoCo.
 ## Objects
 
 <div align="left">
-  <img src="media/objects.gif" width="760">
+  <img src="media/objects.webp" width="820">
 </div>
 
 35 objects, across laboratory, manufacturing and household settings. Objects that
@@ -55,7 +55,7 @@ opens a centrifuge tube while the other pipettes into it; only the approach and
 grasp pose change.
 
 <div align="left">
-  <img src="media/humanoid-bimanual.jpg" width="640">
+  <img src="media/humanoid-bimanual.webp" width="640">
 </div>
 
 ## The hand
@@ -158,6 +158,10 @@ external checkout is needed. Every entry point is
 lists the real flags.
 
 ## The seven DOFs
+
+<div align="left">
+  <img src="media/hand-axes.jpg" width="520">
+</div>
 
 Each gripper is a parallel jaw plus two independent finger slides, and the stage
 carries the auxiliary gripper up and down. Every DOF is linear and commanded in
