@@ -341,6 +341,22 @@ class MockServo:
                 self._torque_on[sid] = bool(on)
         return True
 
+    def set_torque_limit(self, sid: int, limit: int) -> bool:
+        """No-op here, matching `set_positions`'s torque: this model has no
+        concept of a force ceiling, real or otherwise. Present so code that
+        calls it (real hardware's separate TORQUE_LIMIT register, 0-1000,
+        distinct from `set_positions`'s own per-move torque -- see
+        `ft_servo_driver.hpp`) runs the same against `--mock`."""
+        return True
+
+    def set_torque_limits(self, sids: Sequence[int], limits: Sequence[int]) -> None:
+        if len(limits) != len(sids):
+            raise ValueError(
+                f"set_torque_limits: ids and limits must be the same length, "
+                f"got {len(sids)} vs {len(limits)}")
+        for sid, limit in zip(sids, limits):
+            self.set_torque_limit(sid, limit)
+
     # ── Reads ─────────────────────────────────────────────────────────────────
 
     def read_all(self, sids: Sequence[int]) -> list[Reading]:

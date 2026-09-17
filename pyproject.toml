@@ -6,6 +6,7 @@ build-backend = "scikit_build_core.build"
 name = "cartesian-hand"
 version = "0.2.0"
 description = "7-DOF FT servo gripper controller (cartesian hand)"
+license = "Apache-2.0"
 requires-python = ">=3.8"
 dependencies = ["numpy", "tyro>=0.9"]
 

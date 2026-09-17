@@ -29,12 +29,15 @@ tick. `Move` rows have no per-tick setpoint channel, but nothing requires a
 `WAVE_STEPS_PER_LEG` steps, and DOF `i` starts its leg one step after DOF
 `i - 1` starts its own, so several `WAVE_DOFS` are mid-leg on the same frame.
 Frames chain straight into each other with no dwell, so nothing pauses the
-motion between them. `WAVE_STEPS_PER_LEG` is sized to stay clear of `Move`'s
-default 1 mm arrival tolerance even at `open_fraction`'s tunable floor (0.5)
--- see the constant's own comment -- so every step is real travel rather than
-an instant no-op from a goal already inside tolerance. Still discrete steps,
-not a continuous stream, but small and un-paused enough to read as one
-continuous ripple rather than fingers handing off to each other.
+motion between them. Each wave `Move` also widens its own arrival tolerance to
+`WAVE_TOLERANCE_MM`, looser than `Move`'s 1 mm default, so a waypoint is
+flagged arrived while still coasting toward it rather than after decelerating
+to a full stop -- see that constant's comment. `WAVE_STEPS_PER_LEG` is sized
+to stay clear of `WAVE_TOLERANCE_MM` even at `open_fraction`'s tunable floor
+(0.5) -- see its own comment -- so every step is real travel rather than an
+instant no-op from a goal already inside tolerance. Still discrete steps, not
+a continuous stream, but small, un-paused, and loosely-toleranced enough to
+read as one continuous ripple rather than fingers handing off to each other.
 
 **`open_fraction`, not `hand.upper()`.** `HandConfig.upper` warns not to
 command it: the travel table is CAD and reads high, so asking for the exact
@@ -60,11 +63,19 @@ WAVE_DOFS = (BASE_LEFT, BASE_RIGHT, AUX_RIGHT, AUX_LEFT)
 
 # Steps per leg (closed->open, or open->closed) of the wave. Each DOF starts
 # its own leg one step after the DOF before it -- see the module docstring's
-# wave note. Bounded above by `Move`'s default 1 mm arrival tolerance: at
-# `open_fraction`'s tunable floor (0.5) the shortest finger travel is
-# ~27.5 mm, and 15 steps keeps each one at ~1.8 mm, safely past 1 mm so a
-# step is genuine travel rather than a goal already inside tolerance.
+# wave note. Bounded above by `WAVE_TOLERANCE_MM` below: at `open_fraction`'s
+# tunable floor (0.5) the shortest finger travel is ~27.5 mm, and 15 steps
+# keeps each one at ~1.8 mm, safely past that tolerance so a step is genuine
+# travel rather than a goal already inside tolerance.
 WAVE_STEPS_PER_LEG = 15
+
+# Looser than `Move`'s 1 mm default so a waypoint reports arrival while still
+# coasting toward it, not after decelerating to a full stop -- that stop/start
+# at every one of `WAVE_STEPS_PER_LEG` waypoints is what reads as a stepped
+# wave instead of one continuous ripple, and costs the settle time on top.
+# Stays below the ~1.8 mm floor-case step size above (see that comment) so a
+# step is still real travel, not a goal already inside tolerance.
+WAVE_TOLERANCE_MM = 1.5
 
 
 @dataclass
@@ -122,7 +133,8 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
             local = t - i
             if 0 <= local < wave_leg_steps:
                 goal[dof] = wave_frac(local) * open_mm[dof]
-        wave.append(Move(label=f"wave frame {t}", goal=goal))
+        wave.append(Move(label=f"wave frame {t}", goal=goal,
+                         tolerance_mm=WAVE_TOLERANCE_MM))
 
     return Sequence([
         Move(label="close all", goal={ALL_DOFS: 0.0}),

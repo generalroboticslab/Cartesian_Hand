@@ -5,7 +5,9 @@
       -> release the knob -> rise -> close the aux side into a fist
       -> press to `plunger_z`, rise, twice    the plunger
       -> rest the base fingers
-      -> press to `eject_z`, rise             the tip ejector, once, ending high
+      -> press to `eject_z`                   the tip ejector, once
+      -> nudge the aux fingers out and back   corrects the tilt the press left
+      -> rise, then close the base fingers    ending high, hand back as it started
 
 The row list is flat: no `Loop`, and the stroke counts are written out. `Loop`
 earns its place when the count is not knowable at build time -- `cap` derives
@@ -148,8 +150,22 @@ class Config:
     knob_clearance: float = field(default=10.0, metadata={"tune": (1.0, 20.0)})
     """How far the aux jaw backs off the knob, in mm: between twist strokes to
     reset the fingers, and once more afterward to clear it."""
-    base_grip_x: float = field(default=30.0, metadata={"tune": (0.0, 55.0)})
+    base_grip_x: float = field(default=25.0, metadata={"tune": (0.0, 55.0)})
     """Base finger position while the pipette rests in the stand, in mm."""
+    nudge_tilt_correction_mm: float = field(default=0.0,
+                                            metadata={"tune": (0.0, 15.0)})
+    """How far the aux fingers poke out after the ejector press, in mm.
+
+    The ejector press is stiff and lands off the pipette's axis, so it leaves
+    the body tilted in the base jaw. The aux fingers push out this far and
+    return, straightening it before the task ends.
+
+    Out and back, not out and left there -- the task ends holding the rise
+    height, and a run that finished with the aux fingers splayed could not
+    start the next one: `open` assumes the aux side is a closed fist.
+
+    5.0 is a starting guess, not a measurement. Set it on the bench: too
+    little does nothing, too much pushes the tilt the other way."""
     final_pause_s: float = field(default=2.0, metadata={"tune": (0.0, 5.0)})
     """Pause at the end, holding the rise height."""
     approach_torque: float = field(default=150.0, metadata={"tune": (50.0, 300.0)})
@@ -176,7 +192,26 @@ class Config:
     One number for the two because `Hold` carries one effort for the group it
     names, and the body and the knob have never wanted different ones. A jaw
     that needs its own gets its own row."""
-    base_grip_torque: float = field(default=600.0,
+    eject_grip_torque: float = field(default=350.0,
+                                     metadata={"tune": (200.0,520.0)})
+    """Base jaw torque during the tip-ejector press only, above
+    `squeeze_torque`.
+
+    The ejector is the one press stiff enough to shove the pipette out of the
+    base jaw: it takes far more force than the plunger, and it is applied
+    downward along the body, which is the direction the jaw holds worst. So the
+    base grip is boosted for that press and dropped back after -- `brace` and
+    `unbrace` in `build`, one-tick `Hold`s that change nothing but the cap.
+
+    **The slider stops at 520 because above it the boost backfires.** The base
+    jaw is commanded fully shut on the body, so it is saturated and the cap IS
+    the grip: raising it raises current one-for-one. Measured on hand_3
+    (`franka_arm_testing/jaw_compare.py`), a stalled jaw pulls ~385mA at cap
+    400 and holds, but ~538mA at cap 550 and the firmware clears TORQUE_ENABLE
+    within 3 seconds. A press is `press_seconds` = 3.0 long, which is exactly
+    that window, and the trip LATCHES -- so a boost past the wall does not grip
+    harder, it drops the pipette outright mid-press."""
+    base_grip_torque: float = field(default=400.0,
                                     metadata={"tune": (50.0, 400.0)})
     """Torque driving the base fingers out to `base_grip_x`.
 
@@ -219,6 +254,7 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
     floor = hand.gain_vector("torque_min_to_move", start_mm.device)
     jaw_floor = max(float(floor[dof]) for dof in JAWS)
     squeeze = max(cfg.squeeze_torque, jaw_floor) / 1000.0
+    eject_grip = max(cfg.eject_grip_torque, jaw_floor) / 1000.0
     base_grip = max(cfg.base_grip_torque, float(floor[BASE_LEFT])) / 1000.0
     push_effort = cfg.push_torque / 1000.0
     lift = lift_effort(hand, cfg.lift_torque)
@@ -275,15 +311,23 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         # matter.
         Move(label="height", goal={Z: mm(Z, cfg.knob_z), FINGERS: 0.0},
              effort=lift, tolerance_mm=Z_TOLERANCE_MM),
-        # One probe, both jaws: the base gripper is fixed and finds the pipette
-        # body, the aux gripper rides z and finds the knob. Only the aux jaw's
-        # stop is a radius the twist can use.
-        Probe(label="probe", group=JAWS, creep=True,
+        # Two probes, not one shared across both jaws: a combined
+        # `Probe(group=JAWS)` followed by a `Hold` only raises the effort once
+        # every dof in the group has retired (`Sequence.step`/`_closed_loop`
+        # gate a row's completion on ALL of its dofs), so whichever jaw
+        # contacts first -- the base gripper on the fixed body, or the aux
+        # gripper riding z onto the knob -- sits at the low contact-seeking
+        # effort until the OTHER one also stalls. Two separate `Probe`s, each
+        # latching its own `grip` effort the tick IT confirms contact
+        # (`Sequence._run`'s `if row.grip is not None: action = hold(...)`),
+        # makes each jaw's hold effort depend only on its own contact, not the
+        # other's. Only the aux jaw's stop is a radius the twist can use.
+        Probe(label="grip base", group=BASE_JAW, creep=True, grip=squeeze),
+        Probe(label="grip aux", group=AUX_JAW, creep=True, grip=squeeze,
               measure={"radius": AUX_JAW}),
-        Hold(label="grip", group=JAWS, effort=squeeze),
         Twist(label="knob", jaw=AUX_JAW, left=AUX_LEFT, right=AUX_RIGHT,
               radius=lambda m: m.radius, span=finger_span_mm,
-              grip=squeeze, clearance=cfg.knob_clearance,
+              grip=squeeze*0.5, clearance=cfg.knob_clearance,
               measure={"radius": AUX_JAW},
               count=lambda m: strokes_for_revolutions(
                   torch.full_like(m.radius, cfg.knob_revs), m.radius,
@@ -301,7 +345,37 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         # body, so they may have to push past it: their own effort, not travel.
         Move(label="rest", goal={BASE: mm(BASE_LEFT, cfg.base_grip_x)},
              effort=base_grip),
-        eject, rise,
+        # The ejector is the one press stiff enough to shove the pipette out of
+        # the base jaw, so the jaw is braced for it and released after. Both
+        # are bare `Hold`s: `seconds=None` retires on the first tick, and
+        # `goal` stays at the probe's 0.0 -- the standing command does not
+        # change, only its cap.
+        #
+        # `unbrace` before the rise, not after, because the boost must not
+        # outlive the press it exists for: a `Sequence` that retires keeps
+        # reissuing its last action forever, and this jaw is stalled, so
+        # leaving it braced parks the servo at the boosted current for the
+        # rest of the run.
+        Hold(label="brace", group=BASE_JAW, effort=eject_grip),
+        eject,
+        Hold(label="unbrace", group=BASE_JAW, effort=squeeze),
+
+        # The press leaves the pipette tilted in the base jaw; this pushes it
+        # back straight, before the rise rather than after so the body is
+        # square while it is still low. Travel effort on both by omission --
+        # the fingers meet nothing. The return goal is the closed hard stop,
+        # so it takes `close aux`'s tolerance for the same reason: a fist
+        # does not reach 0.0 exactly.
+        Move(label="nudge",
+             goal={AUX: mm(AUX_LEFT, cfg.nudge_tilt_correction_mm)}),
+        Move(label="unnudge", goal={AUX: 0.0}, tolerance_mm=2.0),
+        rise,
+        # Undo `rest`: the base fingers went out to `base_grip_x` to clear
+        # the ejector, and nothing after this needs them there. Same effort
+        # as `rest` for the same reason -- the base jaw is still squeezed on
+        # the body, so the fingers may have to push past it on the way back.
+        Move(label="close base", goal={BASE: 0.0}, effort=base_grip,
+             tolerance_mm=CLOSED_TOL_MM),
     ], hand=hand,
        start_mm=start_mm,
        travel_torque=cfg.travel_torque,

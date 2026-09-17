@@ -532,6 +532,17 @@ def twist_stroke(
     turn_stalled = state.turn_stalled | (turn_ok & ~turn_reached)
     retract_ok = at_retract & retracted.succeeded
     action = hold(action, grip_ok, jaw, grip_goal, grip_speed, grip_effort)
+    # The press axis is otherwise untouched between TURN and RETRACT: no
+    # `move_to` call names it again until RETRACT starts, so a press that
+    # hadn't fully reached `press_goal` (timed out into TURN, still creeping
+    # -- see `press_timed_out`) keeps driving toward it for however many
+    # ticks jaw release takes, and can complete that last bit of travel right
+    # as the turn ends. Freeze it at its measured position the instant TURN
+    # finishes so jaw release holds rather than keeps pressing; RETRACT still
+    # issues its own explicit move-back-off afterward. Held through the turn
+    # itself is unchanged -- this only clips the tail past `turn_ok`.
+    action = hold(action, turn_ok & presses, press_dofs,
+                  observation.position_mm, travel_speed, press_effort)
     transitioned = (release_ok | reset_ok | settle_ok | grip_ok | press_ok
                     | press_timed_out | turn_ok | retract_ok)
     failed_now = ((releasing & release.timed_out)

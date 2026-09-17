@@ -60,12 +60,26 @@ lightbulb: num_revs_up is 2.5 and same for down.
 
 petri dish and well plate, 0 offset, 0revs up, 0 revs down. 40torque squeeze 
 
+peanut butter jar: 
+
 dropper bottle: set `dropper_bottle=True` (the "Dropper bottle" button in
 `tasks/dropper_bottle.py` does this). Same cap-opening twist, but once the cap
 breaks free the aux jaw squeezes and releases the dropper's bulb -- twice, once
 with the tip still in the bottle to draw liquid up, once after the pipette is
 lifted clear to dispense it -- before the cap is threaded back down. See the
 `dropper_bottle` branch in `build` for the row-by-row mechanism.
+
+child-safe cap: set `child_safe=True` (the "Child-safe cap" button in
+`tasks/child_safe_cap.py` does this). A child-resistant closure's ratchet
+only disengages while the cap is pushed down, so the plain opening twist --
+which only turns -- rides the ratchet teeth instead of releasing them. This
+runs the closing twist's own press-hold-turn-retract cycle (`TwistPress`) on
+the *opening* twist too, so every un-locking stroke presses down, turns, and
+only retracts once the jaw has let go, same as re-threading already does on
+the way back down. Depth is its own field, `child_safe_press_mm`, not
+`down_stroke_z`: that one is a thread-pitch press capped at a few mm by
+`MAX_DOWN_TRAVEL_MM`, and a ratchet lock generally needs to be pressed
+further than that to disengage.
 """
 import math
 from dataclasses import dataclass, field
@@ -134,17 +148,41 @@ class Config:
     Not a slider: `tasks/dropper_bottle.py` is the button that sets it, so
     `cap` itself keeps its plain cap-cycling default."""
 
-    cap_offset: float = field(default=10.0, metadata={"tune": (0.0, 40.0)})
+    child_safe: bool = False
+    """Press z down through the opening twist as well as the closing one --
+    see the module docstring's "child-safe cap" entry. Depth is
+    `child_safe_press_mm`, not `down_stroke_z`: that field is a thread-pitch
+    press bounded by `MAX_DOWN_TRAVEL_MM` (a few mm), while releasing a
+    ratchet lock needs its own, usually deeper, press. Not a slider:
+    `tasks/child_safe_cap.py` is the button that sets it, so `cap` itself
+    keeps its plain default of pressing only while closing."""
+    child_safe_press_mm: float = field(default=15.0, metadata={"tune": (0.0, 40.0)})
+    """How far below `cap_offset` to press z before and during the opening
+    twist, mm. `child_safe` only. Not run through `MAX_DOWN_TRAVEL_MM` --
+    that ceiling exists to stop a thread press over-travelling past real
+    thread pitch, which does not apply here; `hand.clamped_mm` still floors
+    the goal at the rail's own 0 mm limit."""
+
+    cap_offset: float = field(default=15, metadata={"tune": (0.0, 40.0)})
     """Height of the cap's top face above z zero, mm."""
-    num_revs_up: float = field(default=1.0, metadata={"tune": (0.0, 6.0)})
+    num_revs_up: float = field(default=1, metadata={"tune": (0.0, 6.0)})
     """Revolutions during the opening (unscrewing) twist."""
     num_revs_down: float = field(default=0.8, metadata={"tune": (0.0, 6.0)})
     """Revolutions during the closing (screwing down) twist."""
     squeeze_torque: float = field(default=80.0, metadata={"tune": (40.0, 500.0)})
+    """Aux jaw (DOF4) grip effort for the initial bottle grip and the opening
+    twist. The closing twist's own jaw grip is `close_squeeze_torque`, not
+    this -- see that field."""
+    close_squeeze_torque: float = field(default=80.0, metadata={"tune": (10.0, 500.0)})
+    """Aux jaw (DOF4) grip effort for the closing twist only -- the repeated
+    release/re-grip that screws the lid back on. Split from `squeeze_torque`
+    so a lid that needs a gentler re-grip does not also loosen the initial
+    bottle grip or the opening twist. Defaults equal to `squeeze_torque`."""
     close_torque: float = field(default=150.0, metadata={"tune": (0.0, 300.0)})
     """Finger torque while closing the cap. Zero automatically uses ten servo
     units below the effective opening torque; a positive value overrides it.
-    Jaw release and grip continue to use `squeeze_torque`."""
+    Jaw release continues to use `squeeze_torque`; jaw grip during closing
+    uses `close_squeeze_torque`."""
     approach_torque: float = field(default=150.0, metadata={"tune": (50.0, 300.0)})
     travel_speed: float = field(default=1500.0, metadata={"tune": (200.0, 1500.0)})
     """Servo speed register for every free move, counts/s.
@@ -178,7 +216,7 @@ class Config:
     timeout_margin: float = field(default=1.5, metadata={"tune": (1.0, 3.0)})
     finger_stroke: float = field(default=45.0, metadata={"tune": (10.0, 50.0)})
     """Full sweep of one auxiliary finger during a twist, mm."""
-    lift_mm: float = field(default=35.0, metadata={"tune": (5.0, 50.0)})
+    lift_mm: float = field(default=50.0, metadata={"tune": (5.0, 50.0)})
     """Absolute z position that holds the removed cap clear of the bottle."""
     lift_torque: float = field(default=500.0,
                                 metadata={"tune": (100.0, 1000.0)})
@@ -226,6 +264,7 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
     mm = hand.clamped_mm
     finger_span_mm = mm(AUX_LEFT, cfg.finger_stroke)
     squeeze_effort = cfg.squeeze_torque / 1000.0
+    close_squeeze_effort = cfg.close_squeeze_torque / 1000.0
     finger_floor = max(float(hand.gain_vector("torque_min_to_move")[dof])
                        for dof in AUX)
     opening_torque = max(cfg.squeeze_torque, cfg.travel_torque, finger_floor)
@@ -282,6 +321,20 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         effort=torch.full_like(num_revs_down, reinsert_effort),
         return_effort=torch.full_like(num_revs_down, lift),
     )
+    # Same press, mirrored onto the opening twist: a child-safe cap's ratchet
+    # needs the identical press-hold-turn-retract cycle to disengage, not
+    # just to re-seat threads on the way back down. `active` is its own
+    # all-true tensor rather than `reverse` -- `reverse` also flips the turn
+    # direction, which the opening twist must not inherit.
+    press_open = TwistPress(
+        dof=Z,
+        active=torch.ones_like(num_revs_up, dtype=torch.bool),
+        goal_mm=torch.full_like(
+            num_revs_up, mm(Z, cfg.cap_offset - cfg.child_safe_press_mm)),
+        return_mm=torch.full_like(num_revs_up, cap_height),
+        effort=torch.full_like(num_revs_up, reinsert_effort),
+        return_effort=torch.full_like(num_revs_up, lift),
+    ) if cfg.child_safe else None
 
     def stroke_plan(revs: torch.Tensor):
         """Stroke count and per-stroke span for `revs` -- see module docstring."""
@@ -393,6 +446,7 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
             Twist(label="open", jaw=AUX_JAW, left=AUX_LEFT, right=AUX_RIGHT,
                   radius=lambda m: m.radius, span=stroke_span_up,
                   grip=squeeze_effort, clearance=release_clearance_mm,
+                  press=press_open,
                   measure={"radius": AUX_JAW}, count=strokes_up),
             *handling,
             # Return to the height where the cap was first gripped. Thread
@@ -402,7 +456,7 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
                  tolerance_mm=PUT_BACK_TOL_MM, creep=True),
             Twist(label="close", jaw=AUX_JAW, left=AUX_LEFT,
                   right=AUX_RIGHT, radius=lambda m: m.radius,
-                  span=stroke_span_down, grip=squeeze_effort,
+                  span=stroke_span_down, grip=close_squeeze_effort,
                   turn=close_effort,
                   clearance=release_clearance_mm, reverse=reverse, press=press,
                   measure={"radius": AUX_JAW}, count=strokes_down,

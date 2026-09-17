@@ -3,9 +3,14 @@
     init dof1256 to 0 -> squeeze jaws (dof0 & dof4 together)
       -> grip (gentle search to full span) -> squeeze (latch)
       -> repeat cycles( roll out: dof1/5 out, dof2/6 in -> roll in: dof1/5 in, dof2/6 out )
-      -> close top fingers (dof1/2/5/6 in)
-      -> repeat cycles( tilt out: dof1/2 out -> tilt in: dof1/2 in )
+      -> [if Config.tilt] close top fingers (dof1/2/5/6 in)
+      -> [if Config.tilt] repeat cycles( tilt out: dof1/2 out -> tilt in: dof1/2 in )
       -> ready (fingers to half span, jaws left closed)
+
+`Config.tilt` (default True) gates the two tilt-only rows above; `ready`
+always runs. `tasks/rotate_object.py` is this task with `tilt=False` under
+its own "Rotate object" button -- a roll-only rod-turning maneuver with no
+tilt.
 
 0 mm is a finger's own retracted hard stop -- outward, away from whatever it
 is holding. `finger_span_mm` is the other end of its travel -- inward, closed
@@ -154,6 +159,12 @@ class Config:
     bench note. `accept_stall` alone does not cover this: it needs `_stalled`
     to confirm a stop *more than* 1 mm from goal, which a stall this close can
     never do."""
+    tilt: bool = True
+    """True runs `close top fingers` and the tilt loop after roll; False
+    stops after roll and goes straight to `ready`. Not tunable: it is not a
+    number, and half the range is a different maneuver -- the same idiom
+    `scissors.py`'s `normally_closed` uses. `tasks/rotate_object.py` is this
+    task with `tilt=False` under its own button."""
     timeout_margin: float = field(default=1.5, metadata={"tune": (1.0, 3.0)})
 
 
@@ -175,7 +186,7 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
     probe_reach_mm = mm(BASE_LEFT, hand.travel_mm[BASE_LEFT])
     cycles = max(1, round(cfg.cycles))
 
-    return Sequence([
+    rows = [
         Move(label="init", goal={FINGERS: 0.0}),
         # The two coarse parallel-jaw clamps, closed on the rod together --
         # one `Probe` over both dof0 and dof4, each searching its own hard
@@ -198,25 +209,30 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
             Move(label="roll in", goal={LEFT: finger_span_mm, RIGHT: 0.0},
                  effort=squeeze_effort, accept_stall=True),
         ]),
-        # See the "Tilting" bullet above for why this row exists. dof5 and
-        # dof6 are pinned in too -- roll's last row leaves them on opposite
-        # ends, and tilt wants the aux jaw's hold matched and firm, not one
-        # finger in and the other still out.
-        Move(label="close top fingers", goal={BASE: finger_span_mm,
-                                              AUX: finger_span_mm},
-             effort=squeeze_effort, accept_stall=True),
-        Loop(count=cycles, rows=[
-            Move(label="tilt out", goal={BASE: 0.0},
+    ]
+    if cfg.tilt:
+        rows += [
+            # See the "Tilting" bullet above for why this row exists. dof5
+            # and dof6 are pinned in too -- roll's last row leaves them on
+            # opposite ends, and tilt wants the aux jaw's hold matched and
+            # firm, not one finger in and the other still out.
+            Move(label="close top fingers", goal={BASE: finger_span_mm,
+                                                  AUX: finger_span_mm},
                  effort=squeeze_effort, accept_stall=True),
-            Move(label="tilt in", goal={BASE: finger_span_mm},
-                 effort=squeeze_effort, accept_stall=True),
-        ]),
-        # Ready for the next run: fingers to neutral (half span, neither
-        # rolled nor tilted to an extreme), jaws left alone -- still closed
-        # on the whisk from `squeeze jaws`, not released.
-        Move(label="ready", goal={FINGERS: half_span_mm},
-             effort=squeeze_effort, accept_stall=True),
-    ], hand=hand,
+            Loop(count=cycles, rows=[
+                Move(label="tilt out", goal={BASE: 0.0},
+                     effort=squeeze_effort, accept_stall=True),
+                Move(label="tilt in", goal={BASE: finger_span_mm},
+                     effort=squeeze_effort, accept_stall=True),
+            ]),
+        ]
+    # Ready for the next run: fingers to neutral (half span, neither
+    # rolled nor tilted to an extreme), jaws left alone -- still closed
+    # on the whisk from `squeeze jaws`, not released.
+    rows.append(Move(label="ready", goal={FINGERS: half_span_mm},
+                     effort=squeeze_effort, accept_stall=True))
+
+    return Sequence(rows, hand=hand,
        start_mm=start_mm,
        travel_torque=cfg.travel_torque,
        approach_torque=cfg.approach_torque,

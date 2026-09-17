@@ -32,7 +32,7 @@ Device = str | torch.device
 
 AXES = ("x", "y", "z")
 
-DEFAULT_HAND = "hand_2"
+DEFAULT_HAND = "hand_3"
 
 # Millimetres are float32 everywhere. Positions are mm off int16 encoders, so
 # nothing here needs 53 bits of mantissa, and f32 is what the sim backend wants.
@@ -462,7 +462,32 @@ HAND_2 = HandConfig(
     speed=(300, 300, 300, 500, 300, 300, 300),
 )
 
-HANDS = {h.name: h for h in (HAND_1, HAND_2)}
+HAND_3 = HandConfig(
+    name="hand_3",
+    # by-id, not /dev/ttyACM1: ACM numbers are handed out in plug order, so a
+    # fixed number silently addresses whichever hand enumerated first.
+    port="/dev/serial/by-id/usb-1a86_USB_Single_Serial_5AE6085950-if00",
+    # first_servo_id=0,
+    first_servo_id=0,
+
+    # NOT bisected on this unit -- it has a newer, higher-friction gripper than
+    # hand_2, and hand_2's bisected-low floor (100/400) stalled it before a hard
+    # stop (jaws, DOFs 0 and 4, first). Carried over from hand_1's un-bisected
+    # values instead: a floor known to move real hardware, at the cost of extra
+    # margin over the true minimum. Re-bisect for this unit per the procedure
+    # above -- command a 5mm move, read travel after 3s -- rather than trusting
+    # this number long-term.
+    torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
+    torque_stuck=(400, 400, 400, 800, 400, 400, 400), # not used, not bisected
+
+    # Transit speed, what the sliders and ordinary task rows run at. The zero
+    # seek does NOT use this any more: it asks for its own creep through
+    # `Step.set(speed_mm_s=)`, because a seek and a park want different speeds
+    # on the same joint and this table can only say one. See `zero.seek_speed`.
+    speed=(300, 300, 300, 500, 300, 300, 300),
+)
+
+HANDS = {h.name: h for h in (HAND_1, HAND_2, HAND_3)}
 
 
 def get_hand(name: str = DEFAULT_HAND) -> HandConfig:
