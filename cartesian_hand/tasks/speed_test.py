@@ -15,8 +15,8 @@ columns filled since every DOF gets exactly one timed push. This is measured
 distance over measured time, not the commanded goal over a budget: the stop
 position is read back off `Motions.stop_position_mm` (wherever the row
 actually retired, goal or timeout alike), not assumed to be the nominal
-`travel_mm` table -- which MEMORY records as disagreeing with the real rail on
-every DOF. A push that stalls short still reports a real, if lower, mm/s
+`travel_mm` table -- measured to disagree with the real rail on every DOF. A
+push that stalls short still reports a real, if lower, mm/s
 rather than a nonsense number built on a distance that never happened.
 
 **Top ACCEL is not settable here.** `acc` is a session-wide register
@@ -30,7 +30,7 @@ times whatever the hand's current `acc` gain happens to produce.
 **Wall-clock timing is meaningless under `sim.run`.** `sim.py` steps with no
 `time.sleep` throttle, so `time.time()` deltas there measure Python loop
 overhead, not motion -- and its fixed-`kp` `<position>` actuators ignore the
-torque/speed/acc registers entirely (MEMORY: "Torque is a CAP"). This task is
+torque/speed/acc registers entirely. This task is
 a `studio.live` bench tool, real hardware or `--mock`, both of which share the
 same real-time-paced control loop.
 """

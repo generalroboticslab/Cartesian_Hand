@@ -116,8 +116,9 @@ which. Verified rather than assumed -- mujoco's own visualizer places every
 visual geom at `geom_xpos` to 1.3e-9 m, so `mesh_pos`/`mesh_quat` are a record
 of what was baked into the vertices, not a transform still to apply.
 
-Importing this module requires the `legged_env_v2` sibling checkout for the
-default model path only. Set `LEGGED_ENV_ROOT` if it is not beside this repo.
+The default model path is this repo's own bundled `assets/cartesian_hand/`.
+Set `LEGGED_ENV_ROOT` to a `legged_env_v2` checkout instead when iterating on
+the model itself.
 """
 
 import datetime

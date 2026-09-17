@@ -21,3 +21,6 @@ cartesian_hand/tasks/_preview.py
 
 # Internal dev notes, not part of the public release.
 MEMORY.md
+
+# Per-developer CMake config (local paths to vcpkg/python), not shared.
+CMakeUserPresets.json

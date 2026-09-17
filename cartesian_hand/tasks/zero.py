@@ -2,7 +2,7 @@
 
 Per phase in mechanical order: creep into the stop, record it, back off to mid
 travel. Goals are relative, so this runs uncalibrated. Returns `Result`:
-[N, J] stops, [N] ok flags. Why + bench data: MEMORY.md.
+[N, J] stops, [N] ok flags.
 """
 from dataclasses import dataclass, field
 import torch
@@ -29,9 +29,10 @@ class Config:
     prevent that is too low to break stiction anywhere else. Slow the setpoint
     and both ends resolve -- the error, and so the contact force, stays bounded.
 
-    0.75 mm/s is the 60 counts/s of `cartesian_hand_old/tasks/zeroing.py:52`,
-    whose comment names this exact failure. The park is left at the hand's
-    transit speed: it moves away from the stop, where there is nothing to hit."""
+    0.75 mm/s is the 60 counts/s of an earlier internal implementation's
+    zeroing task, whose comment names this exact failure. The park is left at
+    the hand's transit speed: it moves away from the stop, where there is
+    nothing to hit."""
     timeout_margin: float = field(default=1.0, metadata={"tune": (1.0, 3.0)})
     park_torque: float = field(default=200.0, metadata={"tune": (100.0, 800.0)})
     """A park breaks OUT of a stop, which needs more than `torque_min_to_move` --

@@ -32,18 +32,17 @@ class Config:
 
     400 is the hardest cap this hand can hold continuously. Grip force IS
     current, so the hardest grip is the highest current the servo survives
-    indefinitely, and the ladder in `franka_arm_testing/jaw_compare.py` puts
-    that between 400 and 550: stalled at 400 both jaws pull ~385mA and hold,
-    at 550 both pull ~538mA and the firmware clears TORQUE_ENABLE within 3s.
-    The trip latches, so overshooting is not a soft failure -- it drops the
-    object, and only a torque off/on toggle revives the servo.
+    indefinitely, and a bench comparison put that between 400 and 550:
+    stalled at 400 both jaws pull ~385mA and hold, at 550 both pull ~538mA
+    and the firmware clears TORQUE_ENABLE within 3s. The trip latches, so
+    overshooting is not a soft failure -- it drops the object, and only a
+    torque off/on toggle revives the servo.
 
     This is a ceiling and MUST stay one -- a grip that actually saturates at
-    400 is not continuous. Measured (`franka_arm_testing/thermal_probe.py`),
-    a full stall there holds 385mA and runs 40 -> 72C in 120 seconds, still
-    climbing +15C/min with the slope barely bending; fitted, it settles near
-    140C, and the firmware cuts at 80. So it self-destructs in about two and
-    a half minutes.
+    400 is not continuous. Measured, a full stall there holds 385mA and runs
+    40 -> 72C in 120 seconds, still climbing +15C/min with the slope barely
+    bending; fitted, it settles near 140C, and the firmware cuts at 80. So it
+    self-destructs in about two and a half minutes.
 
     Whether the jaw reaches the cap is `bite_mm`'s job: the cap bounds the
     current, the position error makes it. At the 2.0mm default the jaw draws
@@ -59,15 +58,15 @@ class Config:
     forever. FeeTech firmware answers sustained saturation by clearing
     TORQUE_ENABLE, and the trip LATCHES: re-arming does not clear it, only a
     torque off/on toggle does, which mid-grip drops whatever is held. Measured
-    on hand_3 (`franka_arm_testing/stall_probe.py`): stalled at cap 550 the
-    jaw pulled 534mA and tripped in 3s; at cap 400 it pulled 385mA, survived,
-    but heated ~15C/min with no sign of levelling inside a minute.
+    on hand_3: stalled at cap 550 the jaw pulled 534mA and tripped in 3s; at
+    cap 400 it pulled 385mA, survived, but heated ~15C/min with no sign of
+    levelling inside a minute.
 
     Commanding `contact - bite_mm` makes the error `bite_mm` instead, so
     current follows the preload and the servo is not saturated at all.
 
-    Swept on hand_3 against a real object (`franka_arm_testing/bite_probe.py`),
-    squeeze cap 250, steady state after 15s:
+    Swept on hand_3 against a real object, squeeze cap 250, steady state
+    after 15s:
 
         bite 0.5mm -> settled 12.48 vs goal 12.46,    0mA   <- no grip at all
         bite 1.0mm -> settled 11.81 vs goal 11.60,  -55mA

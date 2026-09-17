@@ -2,7 +2,7 @@
 
 Edit PORT and SERVO_ID below, then:
 
-    python servo_test.py
+    python bench_servo_check.py
 """
 
 import time

@@ -21,11 +21,11 @@ It dissolves one disagreement with the figure for free: the figure's *dual grasp
 panel runs its jaws LO -> HI (opening) while carrying inward "grasp" arrows. Both
 directions run here, so there is nothing to pick.
 
-`PANELS` is transcribed from `plot_primitives.py`'s table
-------------------------------------------------------
+`PANELS` is transcribed from the accompanying paper's primitive figure
+------------------------------------------------------------------
 Same twelve entries, same driven joints, same start/end fractions, with the MJCF
 joint names resolved to DOF indices. That mapping is the identity on the paper's
-numbering -- `config.LAYOUT` and `main.tex`'s `q_0..q_6` agree -- so `left_up_y`
+numbering -- `config.LAYOUT` and the paper's `q_0..q_6` agree -- so `left_up_y`
 is DOF 4, `right_up_finger_x` is DOF 6, and so on.
 
 **The ordered (start, end) pair is kept, never normalized to {low, high}.** On
@@ -56,8 +56,8 @@ DOF at its `torque_min_to_move`, which on both hands is 800 for z against ~250
 horizontal. A row that names its own effort opts out of that floor (`_effort`
 only raises a `loaded` row), and an under-floored z row cannot move the stage in
 either direction -- it burns its deadline, and because `Sequence.step` folds
-`failed` into `done`, every row after it silently never runs. See MEMORY's
-"z torque floor retraction" entry; `cap.py` shipped that bug.
+`failed` into `done`, every row after it silently never runs. `cap.py` shipped
+that bug.
 
 Nothing here presses on anything, so nothing here has a reason to override it.
 """

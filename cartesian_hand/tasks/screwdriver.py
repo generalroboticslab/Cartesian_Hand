@@ -6,8 +6,7 @@ bench, the fallback is to delete the new `build`/`Config` and uncomment the
 old ones, not to re-derive either from scratch.
 
 Transcribed from an operator description of the gait, not yet run on
-hardware -- see `build`'s docstring for the mechanism and MEMORY for
-whichever of the two turns out to work.
+hardware -- see `build`'s docstring for the mechanism.
 """
 
 # """Rotate a screwdriver shaft by rolling it between both jaws' finger pairs --

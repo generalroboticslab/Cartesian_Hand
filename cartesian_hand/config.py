@@ -44,15 +44,14 @@ MM = torch.float32
 # the servo ID addresses the bus.
 #
 # This order is what the sim model must match, and does: axis sequence
-# y,x,x,z,y,x,x against the MJCF actuators, pinned by
-# `test_studio.py::test_dof_i_drives_actuator_i_s_joint`. Do NOT re-order to
+# y,x,x,z,y,x,x against the MJCF actuators. Do NOT re-order to
 # `source/kinematics.json`'s CAD servo numbering -- a third scheme that
-# transposes four DOFs. See MEMORY "Sim/real alignment".
+# transposes four DOFs.
 #
 # `orientation` is servo count direction against positive mm. It CANNOT fix a
 # sim/real direction disagreement and must not be reached for when one appears:
 # it cancels between `mm_to_counts` and `counts_to_mm`, so flipping a sign moves
-# only the hardware. Cost a bench cycle on 2026-09-01; see MEMORY.
+# only the hardware. Cost a bench cycle on 2026-09-01.
 # 2026-09-01: flipping all seven to +1 reversed five DOFs on the real hand. The
 # signs below are right. "sim disagrees" into "hardware is backwards".
 LAYOUT = [
@@ -431,8 +430,7 @@ class HandConfig:
 # absent here comes from the tables at the top of this file.
 
 HAND_1 = HandConfig(
-    name="hand_1", port="/dev/ttyACM0", 
-    # first_servo_id=0,
+    name="hand_1", port="/dev/ttyACM0",
     first_servo_id=14,
 
     # Never bisected on this unit -- older hand_2 values, carried over. hand_1
@@ -447,7 +445,6 @@ HAND_2 = HandConfig(
     # by-id, not /dev/ttyACM1: ACM numbers are handed out in plug order, so a
     # fixed number silently addresses whichever hand enumerated first.
     port="/dev/serial/by-id/usb-1a86_USB_Single_Serial_5AE6085950-if00",
-    # first_servo_id=7,
     first_servo_id=7,
 
     # Bisected on this unit.
@@ -467,7 +464,6 @@ HAND_3 = HandConfig(
     # by-id, not /dev/ttyACM1: ACM numbers are handed out in plug order, so a
     # fixed number silently addresses whichever hand enumerated first.
     port="/dev/serial/by-id/usb-1a86_USB_Single_Serial_5AE6085950-if00",
-    # first_servo_id=0,
     first_servo_id=0,
 
     # NOT bisected on this unit -- it has a newer, higher-friction gripper than

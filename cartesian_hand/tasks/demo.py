@@ -10,9 +10,9 @@ nothing to probe and no grip to size from contact. `Hold(seconds=cfg.dwell)`
 after each `Move` is the pause a person needs to see one phase land before the
 next starts -- there is no separate `Wait` row; see `primitives.Hold`.
 
-**Ported from `cartesian_hand_old/tasks/demo.py`, whose control surface no
-longer exists.** That version drove `hand.set_pos` directly every tick from a
-Python loop, so it could set its own speed (`DEMO_SPEED`), acceleration
+**Ported from an earlier internal implementation's `demo.py`, whose control
+surface no longer exists.** That version drove `hand.set_pos` directly every
+tick from a Python loop, so it could set its own speed (`DEMO_SPEED`), acceleration
 (`DEMO_ACC`), and a deliberately short per-move wait (`DEMO_TIMEOUT = 0.3s`)
 so pacing came from `dwell`/`wave_stroke`, not from waiting out arrival.
 `Sequence` removed all three knobs from task code, for reasons `triggers.py`'s

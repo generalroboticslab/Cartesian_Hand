@@ -23,14 +23,6 @@ and tilts nothing. The primitive cannot tell the two apart -- it writes
 why it takes them as `stage_a, stage_b, other_a, other_b` and why this task
 passes one stage's two fingers as the first pair.
 
-**Unresolved: the finger sign convention.** Whether equal millimetres on a
-stage's two fingers moves the pair together or opens it symmetrically depends on
-`LAYOUT`'s per-finger `orientation`, and README, `test_config.py:81` and
-`config.py` do not currently agree on it (the README table and the bench-pinned
-test say `BASE_LEFT +1 / BASE_RIGHT -1`; LAYOUT says `-1 / -1`). Resolve that
-before trusting this task on hardware -- command DOF 1 alone and watch which
-finger moves, per README's open-question list.
-
 One program, not three
 ----------------------
 `cap` splits at its probe because everything after it is parameterised by the

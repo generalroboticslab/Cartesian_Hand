@@ -14,9 +14,6 @@ dependencies = ["numpy", "tyro>=0.9"]
 serial = ["pyserial"]          # only for ft_servo_python_only, the unused second driver
 camera = ["opencv-python"]     # only for the studio page's --camera window
 
-[project.scripts]
-cartesian-hand = "cartesian_hand.__main__:main"
-
 [tool.scikit-build]
 cmake.build-type = "Release"
 # scikit-build-core owns the Python package so that `pip install -e .` is

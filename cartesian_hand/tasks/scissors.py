@@ -58,7 +58,10 @@ class Config:
     """Height of the aux jaw's grip point above z zero at rest, in mm.
 
     The closed position for a normally-closed tool, the open one otherwise.
-    Probing happens here, so it is also where both handles must be."""
+    Probing is meant to happen here, so it is also where both handles must
+    be -- true only if the hand already arrives at this height and opening,
+    since `build` does not command an entry move to get there (see the
+    commented-out setup rows below)."""
     travel: float = field(default=25.0, metadata={"tune": (5.0, 40.0)})
     """Aux jaw travel away from `handle_offset` for one stroke, in mm."""
     normally_closed: bool = True
@@ -135,6 +138,13 @@ def build(hand: HandConfig, start_mm: torch.Tensor,
         # Jaws and fingers first, z second: the entry z move may ascend and so
         # carries the lift floor, which is far too much force to also put
         # behind a jaw sweeping through free space.
+        #
+        # Left commented out: this task does not let go of what it is holding
+        # (see module docstring), so a repeat call -- e.g. another cut later in
+        # a longer routine -- must not re-open the jaws or reposition z; it has
+        # to pick straight up at the probe with whatever the hand already has.
+        # A first call therefore depends on the hand already being open at
+        # `jaw_opening` and at `rest_z` before this task starts.
         # Move(label="entry", goal={JAWS: mm(BASE_JAW, cfg.jaw_opening),
         #                           FINGERS: 0.0}),
         # Move(label="height", goal={Z: rest_z}, effort=stroke_effort),

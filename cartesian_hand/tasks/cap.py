@@ -44,23 +44,17 @@ open-and-close cycles.
 The height and lift goals are absolute in the hand's millimetre frame, so the
 hand must be zeroed first.
 
-default offset is 10, num_revs_up  = 1, and num_revs_down = 0.8, lift_mm = 35, squeeze 80, 
+Per-object bench settings, listing only what differs from the default
+(`offset=10`, `num_revs_up=1`, `num_revs_down=0.8`, `lift_mm=35`, `squeeze=80`):
 
-centrifuge tube needed 0.65 turns for repeated task
-
-square bottle needs 20 offset, lift_mm35, 
-
-bottle250 needs 25mm offset cap instead of 10 for in hand off table, 1 revs up, 0.8 revs down, lift_mm=50
-
-glue stick: 10mm offset, 0 rev up 0 rev down, squeeze 500, lift 35, same for pen with cap
-
-for culture tube: 10mm offset, lift 35, but squeeze and lift torque at default
-
-lightbulb: num_revs_up is 2.5 and same for down.
-
-petri dish and well plate, 0 offset, 0revs up, 0 revs down. 40torque squeeze 
-
-peanut butter jar: 
+- **centrifuge tube**: 0.65 turns (repeated-cycle task).
+- **square bottle**: offset 20, lift 35.
+- **bottle250**: offset 25, not 10 -- held in hand, off the table -- 1/0.8
+  revs, lift 50.
+- **glue stick / pen with cap**: offset 10, 0/0 revs, squeeze 500, lift 35.
+- **culture tube**: offset 10, lift 35, squeeze/lift torque at default.
+- **lightbulb**: 2.5/2.5 revs.
+- **petri dish / well plate**: offset 0, 0/0 revs, squeeze 40.
 
 dropper bottle: set `dropper_bottle=True` (the "Dropper bottle" button in
 `tasks/dropper_bottle.py` does this). Same cap-opening twist, but once the cap

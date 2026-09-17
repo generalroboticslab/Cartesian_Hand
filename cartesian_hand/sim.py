@@ -306,7 +306,8 @@ def main(task: str = "zero",
         task: a file stem under `tasks/`, e.g. `zero` or `cap`. An unknown name
             raises with the registry listed.
         hand: which entry in `config.HANDS` supplies travel and control rate.
-        xml: MJCF path. Default $CARTESIAN_HAND_MJCF, then the sibling checkout.
+        xml: MJCF path. Default $CARTESIAN_HAND_MJCF, then this repo's bundled
+            `assets/cartesian_hand/cartesian_hand.xml`.
         swap: exchange finger DOFs 1<->2 and 5<->6.
         max_seconds: simulated-time backstop.
         n_envs: how many worlds to simulate. Above 1 implies --warp.

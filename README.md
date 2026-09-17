@@ -36,9 +36,9 @@ To read the code, write a task, or run everything in simulation, skip the build.
 `servo.open_driver` imports the extension inside the call rather than at module
 scope, so nothing in this package touches hardware when you import it.
 
-> `pyproject.toml` is out of date. It declares only `numpy` and `tyro`, and its
-> `[project.scripts]` entry points at `cartesian_hand.__main__:main`, which no
-> longer exists. Use the module entry points below.
+> `pyproject.toml` declares only `numpy` and `tyro` as core dependencies --
+> `torch`, `mujoco` and `viser` above are not yet in it. Use the module entry
+> points below.
 
 ## Quick start
 
@@ -54,6 +54,11 @@ python -m cartesian_hand.studio --teach                  # limp, pose it by hand
 python -m cartesian_hand.sim --task zero
 python -m cartesian_hand.sim --task zero --n-envs 4096 --warp   # GPU, batched
 ```
+
+Simulation uses the MuJoCo model bundled at `assets/cartesian_hand/` -- no
+external checkout needed. `LEGGED_ENV_ROOT` points it at a `legged_env_v2`
+checkout instead, for iterating on the model itself; `scripts/sync_sim_asset.py`
+copies a regenerated model from there back into `assets/`.
 
 Every entry point is [tyro](https://brentyi.github.io/tyro/) over a function
 signature, so `--help` lists the real flags. A tri-state `bool | None` renders as
@@ -374,9 +379,8 @@ and primitive code never indexes a parameter by string. Measurements may change
 values, masks, phases, and tensor counters, but never a Python loop bound or
 tensor shape.
 
-Five manipulation tasks are on this path, all transcribed from the
-implementation in `cartesian_hand_old_validated_real/tasks/`, which ran on real
-objects:
+Five manipulation tasks are on this path, all transcribed from an earlier
+internal implementation (not included in this repo) that ran on real objects:
 
 | task | from | what makes it its own file |
 |---|---|---|
@@ -620,9 +624,7 @@ does capture, resize to 480 px, colour convert and JPEG encode there, handing
 viser's server thread nothing but bytes to send at 15 Hz. That split is the
 whole design: `cap.read()` blocks for a frame period — 33 ms at 30 fps, longer
 than a 20 ms control tick — so a preview on the loop would make every servo
-write late. `tests/test_camera_window.py` drives the path off a generated clip
-and asserts the calling thread never stalls. opencv is imported only when a
-camera is asked for.
+write late. opencv is imported only when a camera is asked for.
 
 The loop writes `qpos` and calls `mj_forward`, never `mj_step`. Stepping would
 re-simulate, and gravity and contact would pull `qpos` away from the values the
@@ -897,16 +899,18 @@ tests/           test_trace.py and its recorded traces.json. Plain asserts, no
                  framework. All that is left of the suite; see Test suite
 hardware_bindings/  submodule: IMU, motor and servo bindings. Only ft_servo/ is
                     compiled here, and it is the sole copy of the servo driver.
+assets/cartesian_hand/  the sim model: cartesian_hand.xml + meshes/, generated
+                    and bundled so sim.py/studio.py need no sibling checkout.
+                    Refresh with scripts/sync_sim_asset.py.
 ```
 
 `config.py` says what the hardware is. `motions.py` is the fixed program path,
 still used by `zero` and `tilt`; `policy.py` and `primitives.py` are the direct
 path every other task takes. `studio.py` and `sim.py` execute both.
 
-`cartesian_hand_old/` is the previous implementation, kept as reference only, and
-nothing imports it. (`examples/twin_policy.py` and the root `test_cartesian_hand.py`
-were removed 2026-09-02: both still imported the deleted `cartesian_hand.hand`
-and could not run.)
+(`examples/twin_policy.py` and the root `test_cartesian_hand.py` were removed
+2026-09-02: both still imported the deleted `cartesian_hand.hand` and could not
+run.)
 
 ## Hardware status
 
@@ -930,8 +934,7 @@ What has run on servos:
   Sync-read saves less than it looks like it should, because it removes the seven
   request packets and not the seven replies.
 - The tick is 89% sleep. Serial I/O is the only real cost in it, and it cannot be
-  shrunk from Python. Before optimizing anything in this loop, re-read the table
-  in `MEMORY.md`.
+  shrunk from Python.
 - `acc` changes lag, not reachability. On the same 5 mm ramp, acc=25 peaks at
   1.37 mm of lag and acc=255 at 0.56 mm. All values arrive.
 - Full zeroing completed under the *previous* implementation, with offsets that
@@ -948,7 +951,7 @@ Not yet established:
   effort, and extraction sequence; only the mechanics are mocked. The stock
   MuJoCo model has no equivalent objects, so object simulation is not used as a
   completion gate.
-- The four tasks ported from `cartesian_hand_old_validated_real/` are
+- The four tasks ported from an earlier internal implementation are
   transcriptions. `screwdriver`, `pipette`, `syringe` and `scissors` enter the
   real executor path correctly, but the *sequences* are what was validated on
   hardware, not these implementations of them. Each needs its object and a
@@ -1003,10 +1006,9 @@ velocity window looks correct in simulation and hangs on the bench.
 It is not recoverable from git. The pre-removal commits do not contain every
 failing case the suite caught, and the mutation recipes exist nowhere else.
 
-Counting tests measures nothing anyway. Mutate the code and re-run. The recipe
-and the results table are in `MEMORY.md`, including the case where a test named
-for the exact bug could not see it, because its body contained a copy of the
-logic it was meant to be checking.
+Counting tests measures nothing anyway. Mutate the code and re-run -- including
+checking for the case where a test named for the exact bug can't actually see
+it, because its body contains a copy of the logic it was meant to be checking.
 
 ## Known issues
 

@@ -184,8 +184,8 @@ hard enough to break stiction. Without this, `CONFIRM_TICKS` elapses first and
 the row rejects a joint that was merely still accelerating: `cap` failed phase
 11 (`cap align`) at exactly 0.2 s while reversing two loaded fingers, which then
 travelled the full 22.5 mm under the standing command after the task had
-already retired. MEMORY records this as the predicted failure of the stiction
-finding (2026-09-02) -- see the `Torque is a CAP` entry.
+already retired -- the predicted failure mode of the stiction finding
+(2026-09-02).
 
 **This costs no motion time.** It applies only where a stall is a FAULT -- a
 free `move_to`. A row that reaches its goal finishes exactly when it always
@@ -385,9 +385,9 @@ def twist_stroke(
 
     ``reverse`` is ``[N] bool`` and swaps which finger leads the reset and
     which finishes the turn, so a stroke and its mirror are one call with a
-    tensor rather than two state machines -- `bulb` unscrews and re-threads in
-    a single task. ``press`` optionally drives a third axis to depth after the
-    re-grip and holds it through the turn, then opens the jaw before backing
+    tensor rather than two state machines -- `cap` unscrews and re-threads in
+    a single task this way. ``press`` optionally drives a third axis to depth
+    after the re-grip and holds it through the turn, then opens the jaw before backing
     the axis off; see `TwistPress`.
 
     Environments that do not press skip the press, the jaw-release before
@@ -1031,9 +1031,9 @@ class Sequence:
         200 counts/s (2.45 mm/s), so a 40 mm twist sweep takes 16 s. The seek
         wants slow -- a fast creep overshoots a hard stop and climbs a gear
         tooth -- and manipulation wants fast, and those are different moves.
-        `Motions` could not express the difference (it carries goal and torque
-        but no speed channel, which MEMORY records as unfixable there); a direct
-        policy commands `Action.max_speed_mm_s` every tick, so here it is free.
+        `Motions` could not express the difference -- it carries goal and torque
+        but no speed channel, and cannot be made to; a direct policy commands
+        `Action.max_speed_mm_s` every tick, so here it is free.
 
         Deadlines are derived from this same number, so raising it shortens the
         budgets with it rather than leaving them stale and over-generous.

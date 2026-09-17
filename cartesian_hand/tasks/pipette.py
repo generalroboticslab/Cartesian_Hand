@@ -166,8 +166,6 @@ class Config:
 
     5.0 is a starting guess, not a measurement. Set it on the bench: too
     little does nothing, too much pushes the tilt the other way."""
-    final_pause_s: float = field(default=2.0, metadata={"tune": (0.0, 5.0)})
-    """Pause at the end, holding the rise height."""
     approach_torque: float = field(default=150.0, metadata={"tune": (50.0, 300.0)})
     """Torque while closing a jaw onto the pipette or its knob."""
     approach_speed: float = field(default=300.0, metadata={"tune": (25.0, 500.0)})
@@ -205,10 +203,10 @@ class Config:
 
     **The slider stops at 520 because above it the boost backfires.** The base
     jaw is commanded fully shut on the body, so it is saturated and the cap IS
-    the grip: raising it raises current one-for-one. Measured on hand_3
-    (`franka_arm_testing/jaw_compare.py`), a stalled jaw pulls ~385mA at cap
-    400 and holds, but ~538mA at cap 550 and the firmware clears TORQUE_ENABLE
-    within 3 seconds. A press is `press_seconds` = 3.0 long, which is exactly
+    the grip: raising it raises current one-for-one. Measured on hand_3, a
+    stalled jaw pulls ~385mA at cap 400 and holds, but ~538mA at cap 550 and
+    the firmware clears TORQUE_ENABLE within 3 seconds. A press is
+    `press_seconds` = 3.0 long, which is exactly
     that window, and the trip LATCHES -- so a boost past the wall does not grip
     harder, it drops the pipette outright mid-press."""
     base_grip_torque: float = field(default=400.0,

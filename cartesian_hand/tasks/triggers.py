@@ -40,15 +40,13 @@ stopped (disarm torque in Studio, or Ctrl-C headless); a positive value runs
 that many complete open/pull/release cycles, and the task's own state resets
 only at the next run's initialization, never mid-loop.
 
-default trigger_offset is 30mm, squeeze_torque 700 (70%), open_mm 40, pull_seconds 3,
-hold_seconds 5.
+Per-object bench settings recorded during tuning (distinct from this file's
+`Config` defaults above):
 
-generic spray botttle trigger_offset is 30mL, 
-
-fantick drill trigger_offset is 20, same with torch flame
-
-0mm offset with alcohol spray and white board spray
-
+- **generic spray bottle**: trigger_offset 30mm, squeeze_torque 700,
+  open_mm 40, pull_seconds 3, hold_seconds 5.
+- **fantick drill, torch flame**: trigger_offset 20mm.
+- **alcohol spray, white board spray**: trigger_offset 0mm.
 """
 from dataclasses import dataclass, field
 
