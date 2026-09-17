@@ -21,6 +21,11 @@ cartesian_hand/tasks/_preview.py
 
 # Internal dev notes, not part of the public release.
 MEMORY.md
+plan/
 
 # Per-developer CMake config (local paths to vcpkg/python), not shared.
 CMakeUserPresets.json
+
+# Source clips for the README GIFs. The mp4s are tens of MB each and git keeps
+# them forever; only the encoded media/*.gif belongs in the repo.
+media/*.mp4
