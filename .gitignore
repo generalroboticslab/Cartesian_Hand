@@ -26,6 +26,6 @@ plan/
 # Per-developer CMake config (local paths to vcpkg/python), not shared.
 CMakeUserPresets.json
 
-# Source clips for the README GIFs. The mp4s are tens of MB each and git keeps
-# them forever; only the encoded media/*.gif belongs in the repo.
+# Source clips for the README animations. The mp4s are tens of MB each and git
+# keeps them forever; only the encoded media/*.webp belongs in the repo.
 media/*.mp4
