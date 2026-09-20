@@ -38,8 +38,8 @@ and force limit.
 |---|---|--:|
 | Cap | `cap` | 15 |
 | Two-handle | `scissors` | 6 |
-| Trigger | — | 5 |
-| Pump | `syringe` | 3 |
+| Trigger | `triggers` | 5 |
+| Pump | `pump`, `syringe` | 3 |
 | Screwdriver | `screwdriver` | 3 |
 | Pipette | `pipette` | 2 |
 | Reorientation | `tilt` | 1 |
@@ -47,8 +47,7 @@ and force limit.
 > **Read that as object coverage, not as this repository's test results.** The
 > sequences were validated on an earlier internal implementation that is not
 > included here. The task files in `cartesian_hand/tasks/` are transcriptions of
-> them and have not been re-run on the objects. Trigger actuation has no task
-> file here at all. See [Status](#status).
+> them and have not been re-run on the objects. See [Status](#status).
 
 The same procedures transfer to a humanoid. With a hand on each arm, one hand
 opens a centrifuge tube while the other pipettes into it; only the approach and
