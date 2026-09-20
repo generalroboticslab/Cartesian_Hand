@@ -2,6 +2,14 @@
 
 **In-hand manipulation with all-linear fingers.**
 
+Boxi Xia†, Bokuan Li†, Ryan Shin, Zijiang Yang, Jiaxun Liu,
+[Boyuan Chen](http://boyuanchen.com/)
+
+Duke University, [General Robotics Lab](https://generalroboticslab.com/).
+† equal contribution, co-first authors.
+
+### [Project page](https://generalroboticslab.com/cartesian_handv1) with full-length video of every object
+
 <div align="left">
   <img src="media/hero.webp" width="640">
 </div>
@@ -14,14 +22,6 @@ the hand has no singular poses.
 This repository is the control stack: task authoring, the tensor engine that runs
 a task, and three backends that execute it on servos, on CPU MuJoCo, or on
 batched GPU MuJoCo.
-
-<!-- TODO before making this repo public: the project page is anonymized for
-     review ("Anonymous Authors / Anonymous Institution"). Publishing this repo
-     under a named org and linking the page together de-anonymize the
-     submission. Uncomment after the review decision.
-
-### [Project page](https://rivery927.github.io/cartesian-hand-page/) with full-length video of every object
--->
 
 ## Objects
 
@@ -113,9 +113,14 @@ Two controller forms share that pipeline:
 ```bash
 git clone --recurse-submodules https://github.com/generalroboticslab/Cartesian_Hand.git
 cd Cartesian_Hand
-pip install -e .
-pip install torch mujoco viser        # not yet declared in pyproject
+pip install -e ".[sim,studio]"
 ```
+
+`torch` is a core dependency. The extras are optional: `sim` pulls MuJoCo,
+`studio` pulls viser for the browser page, `camera` pulls OpenCV for the
+studio's camera window, and `serial` pulls pyserial for the pure-Python servo
+driver. The batched GPU path additionally needs `warp` and `mujoco_warp`, which
+are not declared because they are not on PyPI under stable names.
 
 Already cloned without `--recurse-submodules`? Run
 `git submodule update --init --recursive`. The build compiles the nanobind
@@ -264,9 +269,23 @@ Full measurements are in
 a hand to a limit — the far end of every rail is open, and a carriage that passes
 it leaves its slider.
 
-<!-- TODO before making this repo public: add the author line and a BibTeX block
-     here once the submission is no longer anonymous. See the note under the
-     title. -->
+## Citation
+
+```bibtex
+@article{xia2026cartesianhand,
+  title   = {The Cartesian Hand: In-Hand Manipulation with All-Linear Fingers},
+  author  = {Xia, Boxi and Li, Bokuan and Shin, Ryan and Yang, Zijiang
+             and Liu, Jiaxun and Chen, Boyuan},
+  year    = {2026},
+  url     = {https://generalroboticslab.com/cartesian_handv1}
+}
+```
+
+## Acknowledgements
+
+Supported by DARPA FoundSci under award HR00112490372, DARPA TIAMAT under award
+HR00112490419, ARO under award W911NF2410405, and ARL STRONG under awards
+W911NF2320182, W911NF2220113 and W911NF242021.
 
 ## License
 

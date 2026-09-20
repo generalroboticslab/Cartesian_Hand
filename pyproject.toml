@@ -8,9 +8,12 @@ version = "0.2.0"
 description = "7-DOF FT servo gripper controller (cartesian hand)"
 license = "Apache-2.0"
 requires-python = ">=3.8"
-dependencies = ["numpy", "tyro>=0.9"]
+dependencies = ["numpy", "torch", "tyro>=0.9"]
 
 [project.optional-dependencies]
+sim = ["mujoco"]               # the CPU MuJoCo backend in sim.py
+studio = ["viser", "mujoco"]   # studio.py imports both at module scope: the page
+                               # is viser, but it draws the mujoco meshes
 serial = ["pyserial"]          # only for ft_servo_python_only, the unused second driver
 camera = ["opencv-python"]     # only for the studio page's --camera window
 
