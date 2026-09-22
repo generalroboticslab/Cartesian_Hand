@@ -1,0 +1,911 @@
+{
+  "frame": "world (Fusion root coordinate system)",
+  "fusion_document": "cartesian_hand_sim",
+  "joints": [
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 3",
+      "occurrence_one": "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "occurrence_two": "base_gripper (1):1/base_gripper:1",
+      "origin_mm": [
+        -3.0749999999999993,
+        -8.881784197001252e-15,
+        8.339472759989853e-16
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 4",
+      "occurrence_one": "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "occurrence_two": "aux_gripper (1):1/aux_gripper:1",
+      "origin_mm": [
+        -2.9249999999999936,
+        5.09052920384666e-15,
+        32.00000000000001
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 14",
+      "occurrence_one": "gears:1/gear:7/Component9:1",
+      "occurrence_two": "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "origin_mm": [
+        -0.0750000000000009,
+        -4.440892098500625e-15,
+        1.7423115688741111e-15
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 15",
+      "occurrence_one": "gears:1/gear:6/Component9:1",
+      "occurrence_two": "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "origin_mm": [
+        0.07500000000000645,
+        5.457923243590865e-15,
+        31.999999999999996
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 16",
+      "occurrence_one": "gears:1/gear:5/Component9:1",
+      "occurrence_two": "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "origin_mm": [
+        -29.074999999999864,
+        21.500000000000014,
+        1.4999999999999862
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 17",
+      "occurrence_one": "gears:1/gear:4/Component9:1",
+      "occurrence_two": "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "origin_mm": [
+        103.93466312999999,
+        -15.875000000274168,
+        32.00000000000002
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 18",
+      "occurrence_one": "gears:1/gear:3/Component9:1",
+      "occurrence_two": "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "origin_mm": [
+        103.93466312999999,
+        -15.875000000274184,
+        3.33169274133393e-16
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 19",
+      "occurrence_one": "gears:1/gear:2/Component9:1",
+      "occurrence_two": "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "origin_mm": [
+        103.93466313000002,
+        15.875000000274191,
+        -1.1862707919583012e-14
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 20",
+      "occurrence_one": "gears:1/gear:1/Component9:1",
+      "occurrence_two": "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "origin_mm": [
+        103.93466313000008,
+        15.87500000027423,
+        31.99999999999997
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 21",
+      "occurrence_one": "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-414-BOTTOMCASE_48:1",
+      "occurrence_two": "base_gripper (1):1/base_gripper:1",
+      "origin_mm": [
+        -3.074999999999966,
+        21.500000000000007,
+        1.5000000000000027
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 22",
+      "occurrence_one": "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "occurrence_two": "fingers:1/finger (1):6/finger:1",
+      "origin_mm": [
+        103.93466312999999,
+        -18.875000000274166,
+        32.0
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 23",
+      "occurrence_one": "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "occurrence_two": "fingers:1/finger (1):1/finger:1",
+      "origin_mm": [
+        103.93466312999999,
+        -18.875000000274188,
+        5.168662940054955e-16
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 24",
+      "occurrence_one": "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "occurrence_two": "fingers:1/finger (1):5/finger:1",
+      "origin_mm": [
+        103.93466313000002,
+        18.875000000274188,
+        -1.1679010899710911e-14
+      ]
+    },
+    {
+      "as_built": false,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 25",
+      "occurrence_one": "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "occurrence_two": "fingers:1/finger (1):7/finger:1",
+      "origin_mm": [
+        103.93466313000008,
+        18.875000000274177,
+        31.99999999999997
+      ]
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -6.938893903907225e-17,
+        0.0,
+        -1.0
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": 0.0,
+        "minimum": -60.0,
+        "rest": 0.0,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 1",
+      "occurrence_one": "aux_gripper (1):1/aux_gripper:1",
+      "occurrence_two": "base_gripper (1):1/base_gripper:1",
+      "origin_mm": [
+        -36.99999999999925,
+        -47.999999999999986,
+        15.999999999999995
+      ],
+      "value_mm": 0.0
+    },
+    {
+      "as_built": true,
+      "is_suppressed": false,
+      "joint_type": "rigid",
+      "joint_type_id": 0,
+      "motion_class": "RigidJointMotion",
+      "name": "Rigid 2",
+      "occurrence_error": "2 : InternalValidationError : res",
+      "occurrence_one": "base_gripper (1):1/base_gripper:1",
+      "occurrence_two": null,
+      "origin_mm": null
+    },
+    {
+      "as_built": true,
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": 22.631707485000003,
+        "minimum": -30.0,
+        "rest": 0.0,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 6",
+      "occurrence_one": "fingers:1/finger (1):1/finger:1",
+      "occurrence_two": "base_gripper (1):1/base_gripper:1",
+      "origin_mm": [
+        34.0,
+        20.591218319548194,
+        14.000000000000002
+      ],
+      "value_mm": 22.631707485
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -7.357539376424819e-34,
+        1.0,
+        1.2246467991473532e-16
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 7",
+      "occurrence_one": "fingers:1/finger (1):5/finger:1",
+      "occurrence_two": "base_gripper (1):1/base_gripper:1",
+      "origin_mm": [
+        34.0,
+        -25.462499999725825,
+        -2.1250000000000084
+      ],
+      "value_mm": -22.631707485000003
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -6.123233995736762e-17,
+        1.0,
+        -6.123233995736767e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": 22.631707485000003,
+        "minimum": -30.0,
+        "rest": 0.0,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 8",
+      "occurrence_one": "fingers:1/finger (1):6/finger:1",
+      "occurrence_two": "aux_gripper (1):1/aux_gripper:1",
+      "origin_mm": [
+        33.999999999999986,
+        20.591218319548194,
+        46.0
+      ],
+      "value_mm": 22.631707485000003
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -6.123233995736761e-17,
+        1.0,
+        6.123233995736765e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 9",
+      "occurrence_one": "fingers:1/finger (1):7/finger:1",
+      "occurrence_two": "aux_gripper (1):1/aux_gripper:1",
+      "origin_mm": [
+        33.99999999999999,
+        -25.462499999725814,
+        29.874999999999986
+      ],
+      "value_mm": -22.631707485000003
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -1.0,
+        -6.123233995736766e-17,
+        6.123233995736766e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": 0.0,
+        "minimum": -60.0,
+        "rest": null,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 10",
+      "occurrence_one": "finger_tips:1/finger_tip (1):1/finger_tip:1",
+      "occurrence_two": "fingers:1/finger (1):1/finger:1",
+      "origin_mm": [
+        81.46733156500004,
+        -2.7418067816142866e-10,
+        -15.999999999999963
+      ],
+      "value_mm": 0.0
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -1.0,
+        -6.123233995736769e-17,
+        4.921656629667227e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 11",
+      "occurrence_one": "finger_tips:1/finger_tip (1):2/finger_tip:1",
+      "occurrence_two": "fingers:1/finger (1):5/finger:1",
+      "origin_mm": [
+        81.46733156500004,
+        2.7418067816142866e-10,
+        -16.000000000000004
+      ],
+      "value_mm": -1.5407439555097887e-31
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -1.0,
+        -1.224646799147353e-16,
+        6.123233995736767e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": 0.0,
+        "minimum": -60.0,
+        "rest": 0.0,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 12",
+      "occurrence_one": "finger_tips:1/finger_tip (1):3/finger_tip:1",
+      "occurrence_two": "fingers:1/finger (1):6/finger:1",
+      "origin_mm": [
+        81.46733156499998,
+        -2.7416291459303466e-10,
+        47.999999999999986
+      ],
+      "value_mm": -3.944304526105059e-30
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -1.0,
+        1.232595164407831e-32,
+        4.9216566296672306e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "slider",
+      "joint_type_id": 2,
+      "limits": {
+        "maximum": 0.0,
+        "minimum": -60.0,
+        "rest": 0.0,
+        "unit": "mm"
+      },
+      "motion_class": "SliderJointMotion",
+      "name": "Slider 13",
+      "occurrence_one": "finger_tips:1/finger_tip (1):4/finger_tip:1",
+      "occurrence_two": "fingers:1/finger (1):7/finger:1",
+      "origin_mm": [
+        81.467331565,
+        2.7419844172982266e-10,
+        47.999999999999936
+      ],
+      "value_mm": -2.9582283945787943e-30
+    },
+    {
+      "as_built": true,
+      "axis": [
+        1.0,
+        0.0,
+        3.0278809762504233e-16
+      ],
+      "is_suppressed": false,
+      "joint_type": "revolute",
+      "joint_type_id": 1,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "rad"
+      },
+      "motion_class": "RevoluteJointMotion",
+      "name": "Revolute 2",
+      "occurrence_one": "HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "occurrence_two": "HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "origin_mm": [
+        0.0,
+        0.0,
+        6.4
+      ],
+      "value_rad": 0.0
+    },
+    {
+      "as_built": true,
+      "axis": [
+        1.0,
+        1.2246467991473535e-16,
+        9.985260017302804e-16
+      ],
+      "is_suppressed": false,
+      "joint_type": "revolute",
+      "joint_type_id": 1,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "rad"
+      },
+      "motion_class": "RevoluteJointMotion",
+      "name": "Revolute 2",
+      "occurrence_one": "HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "occurrence_two": "HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "origin_mm": [
+        0.0,
+        0.0,
+        6.4
+      ],
+      "value_rad": 0.0
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -0.9999999999999977,
+        6.162975822039155e-33,
+        -3.027880976250417e-16
+      ],
+      "is_suppressed": false,
+      "joint_type": "revolute",
+      "joint_type_id": 1,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "rad"
+      },
+      "motion_class": "RevoluteJointMotion",
+      "name": "Revolute 2",
+      "occurrence_one": "HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "occurrence_two": "HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "origin_mm": [
+        0.0,
+        0.0,
+        6.4
+      ],
+      "value_rad": 0.0
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -1.224646799147353e-16,
+        1.0,
+        -6.123233995736766e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "revolute",
+      "joint_type_id": 1,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "rad"
+      },
+      "motion_class": "RevoluteJointMotion",
+      "name": "Revolute 2",
+      "occurrence_one": "HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "occurrence_two": "HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "origin_mm": [
+        0.0,
+        0.0,
+        6.4
+      ],
+      "value_rad": 0.0
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -6.123233995736766e-17,
+        1.0,
+        -6.123233995736766e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "revolute",
+      "joint_type_id": 1,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "rad"
+      },
+      "motion_class": "RevoluteJointMotion",
+      "name": "Revolute 2",
+      "occurrence_one": "HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "occurrence_two": "HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "origin_mm": [
+        0.0,
+        0.0,
+        6.4
+      ],
+      "value_rad": 0.0
+    },
+    {
+      "as_built": true,
+      "axis": [
+        6.123233995736767e-17,
+        -1.0,
+        -6.123233995736766e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "revolute",
+      "joint_type_id": 1,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "rad"
+      },
+      "motion_class": "RevoluteJointMotion",
+      "name": "Revolute 2",
+      "occurrence_one": "HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "occurrence_two": "HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "origin_mm": [
+        0.0,
+        0.0,
+        6.4
+      ],
+      "value_rad": 0.0
+    },
+    {
+      "as_built": true,
+      "axis": [
+        -4.5554407119658594e-32,
+        -1.0,
+        -6.123233995736762e-17
+      ],
+      "is_suppressed": false,
+      "joint_type": "revolute",
+      "joint_type_id": 1,
+      "limits": {
+        "maximum": null,
+        "minimum": null,
+        "rest": null,
+        "unit": "rad"
+      },
+      "motion_class": "RevoluteJointMotion",
+      "name": "Revolute 2",
+      "occurrence_one": "HL-3608_ASM_121_ASM:1/WJ-BB00-0235_HORN_22:1",
+      "occurrence_two": "HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+      "origin_mm": [
+        0.0,
+        0.0,
+        6.4
+      ],
+      "value_rad": 0.0
+    }
+  ],
+  "joints_off_zero": [
+    {
+      "name": "Slider 6",
+      "unit": "mm",
+      "value": 22.631707485
+    },
+    {
+      "name": "Slider 7",
+      "unit": "mm",
+      "value": -22.631707485000003
+    },
+    {
+      "name": "Slider 8",
+      "unit": "mm",
+      "value": 22.631707485000003
+    },
+    {
+      "name": "Slider 9",
+      "unit": "mm",
+      "value": -22.631707485000003
+    }
+  ],
+  "motion_link_accessor": "motionLinks",
+  "motion_links": [
+    {
+      "joints": [
+        "Slider 6",
+        "Slider 7"
+      ],
+      "name": "Motion Link 26"
+    },
+    {
+      "joints": [
+        "Slider 9",
+        "Slider 8"
+      ],
+      "name": "Motion Link 27"
+    },
+    {
+      "joints": [
+        "Slider 10",
+        "Slider 11"
+      ],
+      "name": "Motion Link 28"
+    },
+    {
+      "joints": [
+        "Slider 12",
+        "Slider 13"
+      ],
+      "name": "Motion Link 29"
+    }
+  ],
+  "notes": [],
+  "path_separator": "/ (Fusion '+' rewritten)",
+  "rigid_groups": [
+    {
+      "name": "Rigid Group 1",
+      "occurrences": [
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/PCBA_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-414-BOTTOMCASE_48:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/M2-10-6_2:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/M2-10-6_2:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:4",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0413-MIDDLECASE_80:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/OUTGEAR_ASM_11_ASM:1/OUTPUTGEAR_40:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:3",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:1/HL-3608_ASM_121_ASM:1/MF85ZZ_1:1"
+      ]
+    },
+    {
+      "name": "Rigid Group 1",
+      "occurrences": [
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/PCBA_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-414-BOTTOMCASE_48:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/M2-10-6_2:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/M2-10-6_2:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:4",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0413-MIDDLECASE_80:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/OUTGEAR_ASM_11_ASM:1/OUTPUTGEAR_40:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:3",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:2/HL-3608_ASM_121_ASM:1/MF85ZZ_1:1"
+      ]
+    },
+    {
+      "name": "Rigid Group 1",
+      "occurrences": [
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/PCBA_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-414-BOTTOMCASE_48:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/M2-10-6_2:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/M2-10-6_2:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:4",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0413-MIDDLECASE_80:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/OUTGEAR_ASM_11_ASM:1/OUTPUTGEAR_40:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:3",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:3/HL-3608_ASM_121_ASM:1/MF85ZZ_1:1"
+      ]
+    },
+    {
+      "name": "Rigid Group 1",
+      "occurrences": [
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/PCBA_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-414-BOTTOMCASE_48:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/M2-10-6_2:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/M2-10-6_2:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:4",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0413-MIDDLECASE_80:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/OUTGEAR_ASM_11_ASM:1/OUTPUTGEAR_40:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:3",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:4/HL-3608_ASM_121_ASM:1/MF85ZZ_1:1"
+      ]
+    },
+    {
+      "name": "Rigid Group 1",
+      "occurrences": [
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/PCBA_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-414-BOTTOMCASE_48:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/M2-10-6_2:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/M2-10-6_2:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:4",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0413-MIDDLECASE_80:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/OUTGEAR_ASM_11_ASM:1/OUTPUTGEAR_40:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:3",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:5/HL-3608_ASM_121_ASM:1/MF85ZZ_1:1"
+      ]
+    },
+    {
+      "name": "Rigid Group 1",
+      "occurrences": [
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/PCBA_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-414-BOTTOMCASE_48:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/M2-10-6_2:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/M2-10-6_2:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:4",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0413-MIDDLECASE_80:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/OUTGEAR_ASM_11_ASM:1/OUTPUTGEAR_40:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:3",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:6/HL-3608_ASM_121_ASM:1/MF85ZZ_1:1"
+      ]
+    },
+    {
+      "name": "Rigid Group 1",
+      "occurrences": [
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/PCBA_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-414-BOTTOMCASE_48:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/M2-10-6_2:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0412-TOPCABINET_74:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:2",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/M2-10-6_2:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:4",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/WJ-WK00-0413-MIDDLECASE_80:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:2/MANIFOLD_SOLID_BREP_102995:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_102855:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/OUTGEAR_ASM_11_ASM:1/OUTPUTGEAR_40:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103135:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/DC15_A01_DUMMY_ASSY_IDLE_ASM_9__ASM:1/PHS_1_7X20_5_DC10_3_3:3",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/M2-4LOUSI_1:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/1215BLUSHMOTORASSEMBLY_ASM_18_ASM:1/125-3PINSEAT_1_ASM:1/MANIFOLD_SOLID_BREP_103275:1",
+        "servos:1/FEETECH_HL_3915_Servo_Motor:7/HL-3608_ASM_121_ASM:1/MF85ZZ_1:1"
+      ]
+    }
+  ],
+  "root_component": "cartesian_hand_sim",
+  "units": {
+    "angle": "rad",
+    "length": "mm"
+  }
+}

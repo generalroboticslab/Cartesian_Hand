@@ -11,7 +11,9 @@
     </default>
   </default>
   <asset>
-    <mesh name="base_mesh" file="base.obj" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_steel_mesh" file="base__steel.obj" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_nylon_mesh" file="base__nylon.obj" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_red_mesh" file="base__red.obj" scale="0.001 0.001 0.001" />
     <mesh name="base_col_00_mesh" file="collision_pieces/base_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="base_col_01_mesh" file="collision_pieces/base_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="base_col_02_mesh" file="collision_pieces/base_02.obj" scale="0.001 0.001 0.001" />
@@ -102,7 +104,9 @@
     <mesh name="base_col_87_mesh" file="collision_pieces/base_87.obj" scale="0.001 0.001 0.001" />
     <mesh name="base_col_88_mesh" file="collision_pieces/base_88.obj" scale="0.001 0.001 0.001" />
     <mesh name="base_col_89_mesh" file="collision_pieces/base_89.obj" scale="0.001 0.001 0.001" />
-    <mesh name="bridge_mesh" file="bridge.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_visual_steel_mesh" file="bridge__steel.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_visual_nylon_mesh" file="bridge__nylon.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_visual_red_mesh" file="bridge__red.obj" scale="0.001 0.001 0.001" />
     <mesh name="bridge_col_00_mesh" file="collision_pieces/bridge_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="bridge_col_01_mesh" file="collision_pieces/bridge_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="bridge_col_02_mesh" file="collision_pieces/bridge_02.obj" scale="0.001 0.001 0.001" />
@@ -155,7 +159,37 @@
     <mesh name="bridge_col_49_mesh" file="collision_pieces/bridge_49.obj" scale="0.001 0.001 0.001" />
     <mesh name="bridge_col_50_mesh" file="collision_pieces/bridge_50.obj" scale="0.001 0.001 0.001" />
     <mesh name="bridge_col_51_mesh" file="collision_pieces/bridge_51.obj" scale="0.001 0.001 0.001" />
-    <mesh name="left_up_rack_mesh" file="left_up_rack.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_52_mesh" file="collision_pieces/bridge_52.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_53_mesh" file="collision_pieces/bridge_53.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_54_mesh" file="collision_pieces/bridge_54.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_55_mesh" file="collision_pieces/bridge_55.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_56_mesh" file="collision_pieces/bridge_56.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_57_mesh" file="collision_pieces/bridge_57.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_58_mesh" file="collision_pieces/bridge_58.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_59_mesh" file="collision_pieces/bridge_59.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_60_mesh" file="collision_pieces/bridge_60.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_61_mesh" file="collision_pieces/bridge_61.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_62_mesh" file="collision_pieces/bridge_62.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_63_mesh" file="collision_pieces/bridge_63.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_64_mesh" file="collision_pieces/bridge_64.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_65_mesh" file="collision_pieces/bridge_65.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_66_mesh" file="collision_pieces/bridge_66.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_67_mesh" file="collision_pieces/bridge_67.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_68_mesh" file="collision_pieces/bridge_68.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_69_mesh" file="collision_pieces/bridge_69.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_70_mesh" file="collision_pieces/bridge_70.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_71_mesh" file="collision_pieces/bridge_71.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_72_mesh" file="collision_pieces/bridge_72.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_73_mesh" file="collision_pieces/bridge_73.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_74_mesh" file="collision_pieces/bridge_74.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_75_mesh" file="collision_pieces/bridge_75.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_76_mesh" file="collision_pieces/bridge_76.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_77_mesh" file="collision_pieces/bridge_77.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_78_mesh" file="collision_pieces/bridge_78.obj" scale="0.001 0.001 0.001" />
+    <mesh name="bridge_col_79_mesh" file="collision_pieces/bridge_79.obj" scale="0.001 0.001 0.001" />
+    <mesh name="left_up_rack_visual_steel_mesh" file="left_up_rack__steel.obj" scale="0.001 0.001 0.001" />
+    <mesh name="left_up_rack_visual_nylon_mesh" file="left_up_rack__nylon.obj" scale="0.001 0.001 0.001" />
+    <mesh name="left_up_rack_visual_red_mesh" file="left_up_rack__red.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_rack_col_00_mesh" file="collision_pieces/left_up_rack_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_rack_col_01_mesh" file="collision_pieces/left_up_rack_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_rack_col_02_mesh" file="collision_pieces/left_up_rack_02.obj" scale="0.001 0.001 0.001" />
@@ -208,7 +242,7 @@
     <mesh name="left_up_rack_col_49_mesh" file="collision_pieces/left_up_rack_49.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_rack_col_50_mesh" file="collision_pieces/left_up_rack_50.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_rack_col_51_mesh" file="collision_pieces/left_up_rack_51.obj" scale="0.001 0.001 0.001" />
-    <mesh name="left_up_finger_mesh" file="left_up_finger.obj" scale="0.001 0.001 0.001" />
+    <mesh name="left_up_finger_visual_mesh" file="left_up_finger__nylon.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_finger_col_00_mesh" file="collision_pieces/left_up_finger_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_finger_col_01_mesh" file="collision_pieces/left_up_finger_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_finger_col_02_mesh" file="collision_pieces/left_up_finger_02.obj" scale="0.001 0.001 0.001" />
@@ -239,7 +273,9 @@
     <mesh name="left_up_finger_col_27_mesh" file="collision_pieces/left_up_finger_27.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_finger_col_28_mesh" file="collision_pieces/left_up_finger_28.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_up_finger_col_29_mesh" file="collision_pieces/left_up_finger_29.obj" scale="0.001 0.001 0.001" />
-    <mesh name="right_up_rack_mesh" file="right_up_rack.obj" scale="0.001 0.001 0.001" />
+    <mesh name="right_up_rack_visual_steel_mesh" file="right_up_rack__steel.obj" scale="0.001 0.001 0.001" />
+    <mesh name="right_up_rack_visual_nylon_mesh" file="right_up_rack__nylon.obj" scale="0.001 0.001 0.001" />
+    <mesh name="right_up_rack_visual_red_mesh" file="right_up_rack__red.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_rack_col_00_mesh" file="collision_pieces/right_up_rack_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_rack_col_01_mesh" file="collision_pieces/right_up_rack_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_rack_col_02_mesh" file="collision_pieces/right_up_rack_02.obj" scale="0.001 0.001 0.001" />
@@ -292,7 +328,7 @@
     <mesh name="right_up_rack_col_49_mesh" file="collision_pieces/right_up_rack_49.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_rack_col_50_mesh" file="collision_pieces/right_up_rack_50.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_rack_col_51_mesh" file="collision_pieces/right_up_rack_51.obj" scale="0.001 0.001 0.001" />
-    <mesh name="right_up_finger_mesh" file="right_up_finger.obj" scale="0.001 0.001 0.001" />
+    <mesh name="right_up_finger_visual_mesh" file="right_up_finger__nylon.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_finger_col_00_mesh" file="collision_pieces/right_up_finger_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_finger_col_01_mesh" file="collision_pieces/right_up_finger_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_finger_col_02_mesh" file="collision_pieces/right_up_finger_02.obj" scale="0.001 0.001 0.001" />
@@ -313,7 +349,9 @@
     <mesh name="right_up_finger_col_17_mesh" file="collision_pieces/right_up_finger_17.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_finger_col_18_mesh" file="collision_pieces/right_up_finger_18.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_up_finger_col_19_mesh" file="collision_pieces/right_up_finger_19.obj" scale="0.001 0.001 0.001" />
-    <mesh name="left_down_rack_mesh" file="left_down_rack.obj" scale="0.001 0.001 0.001" />
+    <mesh name="left_down_rack_visual_steel_mesh" file="left_down_rack__steel.obj" scale="0.001 0.001 0.001" />
+    <mesh name="left_down_rack_visual_nylon_mesh" file="left_down_rack__nylon.obj" scale="0.001 0.001 0.001" />
+    <mesh name="left_down_rack_visual_red_mesh" file="left_down_rack__red.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_rack_col_00_mesh" file="collision_pieces/left_down_rack_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_rack_col_01_mesh" file="collision_pieces/left_down_rack_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_rack_col_02_mesh" file="collision_pieces/left_down_rack_02.obj" scale="0.001 0.001 0.001" />
@@ -364,7 +402,7 @@
     <mesh name="left_down_rack_col_47_mesh" file="collision_pieces/left_down_rack_47.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_rack_col_48_mesh" file="collision_pieces/left_down_rack_48.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_rack_col_49_mesh" file="collision_pieces/left_down_rack_49.obj" scale="0.001 0.001 0.001" />
-    <mesh name="left_down_finger_mesh" file="left_down_finger.obj" scale="0.001 0.001 0.001" />
+    <mesh name="left_down_finger_visual_mesh" file="left_down_finger__nylon.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_finger_col_00_mesh" file="collision_pieces/left_down_finger_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_finger_col_01_mesh" file="collision_pieces/left_down_finger_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_finger_col_02_mesh" file="collision_pieces/left_down_finger_02.obj" scale="0.001 0.001 0.001" />
@@ -394,7 +432,9 @@
     <mesh name="left_down_finger_col_26_mesh" file="collision_pieces/left_down_finger_26.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_finger_col_27_mesh" file="collision_pieces/left_down_finger_27.obj" scale="0.001 0.001 0.001" />
     <mesh name="left_down_finger_col_28_mesh" file="collision_pieces/left_down_finger_28.obj" scale="0.001 0.001 0.001" />
-    <mesh name="right_down_rack_mesh" file="right_down_rack.obj" scale="0.001 0.001 0.001" />
+    <mesh name="right_down_rack_visual_steel_mesh" file="right_down_rack__steel.obj" scale="0.001 0.001 0.001" />
+    <mesh name="right_down_rack_visual_nylon_mesh" file="right_down_rack__nylon.obj" scale="0.001 0.001 0.001" />
+    <mesh name="right_down_rack_visual_red_mesh" file="right_down_rack__red.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_rack_col_00_mesh" file="collision_pieces/right_down_rack_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_rack_col_01_mesh" file="collision_pieces/right_down_rack_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_rack_col_02_mesh" file="collision_pieces/right_down_rack_02.obj" scale="0.001 0.001 0.001" />
@@ -448,7 +488,7 @@
     <mesh name="right_down_rack_col_50_mesh" file="collision_pieces/right_down_rack_50.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_rack_col_51_mesh" file="collision_pieces/right_down_rack_51.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_rack_col_52_mesh" file="collision_pieces/right_down_rack_52.obj" scale="0.001 0.001 0.001" />
-    <mesh name="right_down_finger_mesh" file="right_down_finger.obj" scale="0.001 0.001 0.001" />
+    <mesh name="right_down_finger_visual_mesh" file="right_down_finger__nylon.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_finger_col_00_mesh" file="collision_pieces/right_down_finger_00.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_finger_col_01_mesh" file="collision_pieces/right_down_finger_01.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_finger_col_02_mesh" file="collision_pieces/right_down_finger_02.obj" scale="0.001 0.001 0.001" />
@@ -469,21 +509,26 @@
     <mesh name="right_down_finger_col_17_mesh" file="collision_pieces/right_down_finger_17.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_finger_col_18_mesh" file="collision_pieces/right_down_finger_18.obj" scale="0.001 0.001 0.001" />
     <mesh name="right_down_finger_col_19_mesh" file="collision_pieces/right_down_finger_19.obj" scale="0.001 0.001 0.001" />
-    <material name="base_mat" rgba="0.85 0.40 0.40 1" />
-    <material name="bridge_mat" rgba="0.40 0.75 0.40 1" />
-    <material name="left_down_rack_mat" rgba="0.20 0.40 0.65 1" />
-    <material name="left_down_finger_mat" rgba="0.45 0.75 0.95 1" />
-    <material name="right_down_rack_mat" rgba="0.40 0.20 0.55 1" />
-    <material name="right_down_finger_mat" rgba="0.80 0.50 0.95 1" />
-    <material name="left_up_rack_mat" rgba="0.65 0.50 0.10 1" />
-    <material name="left_up_finger_mat" rgba="0.95 0.85 0.30 1" />
-    <material name="right_up_rack_mat" rgba="0.20 0.55 0.55 1" />
-    <material name="right_up_finger_mat" rgba="0.50 0.90 0.90 1" />
+    <material name="base_mat" rgba="0.557 0.315 0.324 1" />
+    <material name="bridge_mat" rgba="0.310 0.507 0.324 1" />
+    <material name="left_down_rack_mat" rgba="0.200 0.315 0.461 1" />
+    <material name="left_down_finger_mat" rgba="0.338 0.507 0.626 1" />
+    <material name="right_down_rack_mat" rgba="0.310 0.205 0.406 1" />
+    <material name="right_down_finger_mat" rgba="0.530 0.369 0.626 1" />
+    <material name="left_up_rack_mat" rgba="0.448 0.369 0.159 1" />
+    <material name="left_up_finger_mat" rgba="0.612 0.562 0.269 1" />
+    <material name="right_up_rack_mat" rgba="0.200 0.397 0.406 1" />
+    <material name="right_up_finger_mat" rgba="0.365 0.590 0.599 1" />
+    <material name="steel_mat" rgba="0.627 0.627 0.627 1" specular="0.60" shininess="0.42" />
+    <material name="nylon_mat" rgba="0.247 0.247 0.247 1" specular="0.05" shininess="0.05" />
+    <material name="red_mat" rgba="1 0 0 1" specular="0.15" shininess="0.15" />
   </asset>
   <worldbody>
     <body name="base" pos="0 0 0">
-      <inertial mass="0.144719" pos="-0.0134303 0.00172423 0.0124613" diaginertia="0.00012362 0.000189325 0.000241028" quat="0.25692 0.676936 -0.63951 -0.258413" />
-      <geom name="base_visual" class="visual" mesh="base_mesh" material="base_mat" />
+      <inertial mass="0.137832" pos="-0.0132959 0.000502811 0.013079" diaginertia="0.000123035 0.000185287 0.000239345" quat="0.252887 0.675727 -0.6404 -0.263305" />
+      <geom name="base_visual_steel" class="visual" mesh="base_visual_steel_mesh" material="base_mat" />
+      <geom name="base_visual_nylon" class="visual" mesh="base_visual_nylon_mesh" material="base_mat" />
+      <geom name="base_visual_red" class="visual" mesh="base_visual_red_mesh" material="base_mat" />
       <geom name="base_col_00" class="collision" type="mesh" mesh="base_col_00_mesh" />
       <geom name="base_col_01" class="collision" type="mesh" mesh="base_col_01_mesh" />
       <geom name="base_col_02" class="collision" type="mesh" mesh="base_col_02_mesh" />
@@ -575,9 +620,11 @@
       <geom name="base_col_88" class="collision" type="mesh" mesh="base_col_88_mesh" />
       <geom name="base_col_89" class="collision" type="mesh" mesh="base_col_89_mesh" />
       <body name="bridge" pos="0 0 0">
-        <inertial mass="0.0873442" pos="-0.00159455 0.000808274 0.0272636" diaginertia="4.27521e-05 0.000117584 0.000136057" quat="0.680103 -0.172629 -0.174533 0.690795" />
-        <joint name="bridge_z" type="slide" axis="0 0 1" range="0 0.06" damping="40" armature="0.05" />
-        <geom name="bridge_visual" class="visual" mesh="bridge_mesh" material="bridge_mat" />
+        <inertial mass="0.0958401" pos="-0.002312 0.00263974 0.0258614" diaginertia="4.6657e-05 0.000122787 0.000142315" quat="0.66514 -0.201574 -0.18697 0.694262" />
+        <joint name="bridge_z" type="slide" axis="0 0 1" range="0 0.052" damping="40" armature="0.05" />
+        <geom name="bridge_visual_steel" class="visual" mesh="bridge_visual_steel_mesh" material="bridge_mat" />
+        <geom name="bridge_visual_nylon" class="visual" mesh="bridge_visual_nylon_mesh" material="bridge_mat" />
+        <geom name="bridge_visual_red" class="visual" mesh="bridge_visual_red_mesh" material="bridge_mat" />
         <geom name="bridge_col_00" class="collision" type="mesh" mesh="bridge_col_00_mesh" />
         <geom name="bridge_col_01" class="collision" type="mesh" mesh="bridge_col_01_mesh" />
         <geom name="bridge_col_02" class="collision" type="mesh" mesh="bridge_col_02_mesh" />
@@ -630,10 +677,40 @@
         <geom name="bridge_col_49" class="collision" type="mesh" mesh="bridge_col_49_mesh" />
         <geom name="bridge_col_50" class="collision" type="mesh" mesh="bridge_col_50_mesh" />
         <geom name="bridge_col_51" class="collision" type="mesh" mesh="bridge_col_51_mesh" />
+        <geom name="bridge_col_52" class="collision" type="mesh" mesh="bridge_col_52_mesh" />
+        <geom name="bridge_col_53" class="collision" type="mesh" mesh="bridge_col_53_mesh" />
+        <geom name="bridge_col_54" class="collision" type="mesh" mesh="bridge_col_54_mesh" />
+        <geom name="bridge_col_55" class="collision" type="mesh" mesh="bridge_col_55_mesh" />
+        <geom name="bridge_col_56" class="collision" type="mesh" mesh="bridge_col_56_mesh" />
+        <geom name="bridge_col_57" class="collision" type="mesh" mesh="bridge_col_57_mesh" />
+        <geom name="bridge_col_58" class="collision" type="mesh" mesh="bridge_col_58_mesh" />
+        <geom name="bridge_col_59" class="collision" type="mesh" mesh="bridge_col_59_mesh" />
+        <geom name="bridge_col_60" class="collision" type="mesh" mesh="bridge_col_60_mesh" />
+        <geom name="bridge_col_61" class="collision" type="mesh" mesh="bridge_col_61_mesh" />
+        <geom name="bridge_col_62" class="collision" type="mesh" mesh="bridge_col_62_mesh" />
+        <geom name="bridge_col_63" class="collision" type="mesh" mesh="bridge_col_63_mesh" />
+        <geom name="bridge_col_64" class="collision" type="mesh" mesh="bridge_col_64_mesh" />
+        <geom name="bridge_col_65" class="collision" type="mesh" mesh="bridge_col_65_mesh" />
+        <geom name="bridge_col_66" class="collision" type="mesh" mesh="bridge_col_66_mesh" />
+        <geom name="bridge_col_67" class="collision" type="mesh" mesh="bridge_col_67_mesh" />
+        <geom name="bridge_col_68" class="collision" type="mesh" mesh="bridge_col_68_mesh" />
+        <geom name="bridge_col_69" class="collision" type="mesh" mesh="bridge_col_69_mesh" />
+        <geom name="bridge_col_70" class="collision" type="mesh" mesh="bridge_col_70_mesh" />
+        <geom name="bridge_col_71" class="collision" type="mesh" mesh="bridge_col_71_mesh" />
+        <geom name="bridge_col_72" class="collision" type="mesh" mesh="bridge_col_72_mesh" />
+        <geom name="bridge_col_73" class="collision" type="mesh" mesh="bridge_col_73_mesh" />
+        <geom name="bridge_col_74" class="collision" type="mesh" mesh="bridge_col_74_mesh" />
+        <geom name="bridge_col_75" class="collision" type="mesh" mesh="bridge_col_75_mesh" />
+        <geom name="bridge_col_76" class="collision" type="mesh" mesh="bridge_col_76_mesh" />
+        <geom name="bridge_col_77" class="collision" type="mesh" mesh="bridge_col_77_mesh" />
+        <geom name="bridge_col_78" class="collision" type="mesh" mesh="bridge_col_78_mesh" />
+        <geom name="bridge_col_79" class="collision" type="mesh" mesh="bridge_col_79_mesh" />
         <body name="left_up_rack" pos="0 0 0">
-          <inertial mass="0.0827584" pos="0.0644625 -0.0123384 0.0344065" diaginertia="3.57502e-05 0.000136041 0.000159193" quat="0.978908 0.0366342 0.0376682 -0.19743" />
-          <joint name="left_up_y" type="slide" axis="0 -1 0" range="0 0.0526317" damping="12" armature="0.02" />
-          <geom name="left_up_rack_visual" class="visual" mesh="left_up_rack_mesh" material="left_up_rack_mat" />
+          <inertial mass="0.0814779" pos="0.0643529 -0.0121818 0.0344762" diaginertia="3.51359e-05 0.000134312 0.000157328" quat="0.97895 0.0351259 0.0376129 -0.197505" />
+          <joint name="left_up_y" type="slide" axis="0 -1 0" range="0 0.052" damping="12" armature="0.02" />
+          <geom name="left_up_rack_visual_steel" class="visual" mesh="left_up_rack_visual_steel_mesh" material="left_up_rack_mat" />
+          <geom name="left_up_rack_visual_nylon" class="visual" mesh="left_up_rack_visual_nylon_mesh" material="left_up_rack_mat" />
+          <geom name="left_up_rack_visual_red" class="visual" mesh="left_up_rack_visual_red_mesh" material="left_up_rack_mat" />
           <geom name="left_up_rack_col_00" class="collision" type="mesh" mesh="left_up_rack_col_00_mesh" />
           <geom name="left_up_rack_col_01" class="collision" type="mesh" mesh="left_up_rack_col_01_mesh" />
           <geom name="left_up_rack_col_02" class="collision" type="mesh" mesh="left_up_rack_col_02_mesh" />
@@ -687,9 +764,9 @@
           <geom name="left_up_rack_col_50" class="collision" type="mesh" mesh="left_up_rack_col_50_mesh" />
           <geom name="left_up_rack_col_51" class="collision" type="mesh" mesh="left_up_rack_col_51_mesh" />
           <body name="left_up_finger" pos="0 0 0">
-            <inertial mass="0.024791" pos="0.0814673 -0.00520891 0.0327" diaginertia="2.99755e-06 1.90315e-05 2.11877e-05" quat="0.725014 -0.688735 -5.23463e-12 7.20967e-12" />
-            <joint name="left_up_finger_x" type="slide" axis="1 0 0" range="0 0.06" damping="2.5" armature="0.01" />
-            <geom name="left_up_finger_visual" class="visual" mesh="left_up_finger_mesh" material="left_up_finger_mat" />
+            <inertial mass="0.0247902" pos="0.0814674 -0.0052086 0.0327001" diaginertia="2.99735e-06 1.90308e-05 2.1187e-05" quat="0.725015 -0.688733 -3.22601e-09 -2.10068e-08" />
+            <joint name="left_up_finger_x" type="slide" axis="1 0 0" range="0 0.065" damping="2.5" armature="0.01" />
+            <geom name="left_up_finger_visual" class="visual" mesh="left_up_finger_visual_mesh" material="left_up_finger_mat" />
             <geom name="left_up_finger_col_00" class="collision" type="mesh" mesh="left_up_finger_col_00_mesh" />
             <geom name="left_up_finger_col_01" class="collision" type="mesh" mesh="left_up_finger_col_01_mesh" />
             <geom name="left_up_finger_col_02" class="collision" type="mesh" mesh="left_up_finger_col_02_mesh" />
@@ -723,9 +800,11 @@
           </body>
         </body>
         <body name="right_up_rack" pos="0 0 0">
-          <inertial mass="0.0827518" pos="0.0644614 0.012338 0.0295934" diaginertia="3.57487e-05 0.000136031 0.000159182" quat="0.978907 0.0366396 -0.0376681 0.197435" />
-          <joint name="right_up_y" type="slide" axis="0 1 0" range="0 0.0526317" damping="12" armature="0.02" />
-          <geom name="right_up_rack_visual" class="visual" mesh="right_up_rack_mesh" material="right_up_rack_mat" />
+          <inertial mass="0.081478" pos="0.0643529 0.0121819 0.0295239" diaginertia="3.51355e-05 0.000134311 0.000157328" quat="0.978949 0.0351285 -0.0376135 0.197509" />
+          <joint name="right_up_y" type="slide" axis="0 1 0" range="0 0.052" damping="12" armature="0.02" />
+          <geom name="right_up_rack_visual_steel" class="visual" mesh="right_up_rack_visual_steel_mesh" material="right_up_rack_mat" />
+          <geom name="right_up_rack_visual_nylon" class="visual" mesh="right_up_rack_visual_nylon_mesh" material="right_up_rack_mat" />
+          <geom name="right_up_rack_visual_red" class="visual" mesh="right_up_rack_visual_red_mesh" material="right_up_rack_mat" />
           <geom name="right_up_rack_col_00" class="collision" type="mesh" mesh="right_up_rack_col_00_mesh" />
           <geom name="right_up_rack_col_01" class="collision" type="mesh" mesh="right_up_rack_col_01_mesh" />
           <geom name="right_up_rack_col_02" class="collision" type="mesh" mesh="right_up_rack_col_02_mesh" />
@@ -779,9 +858,9 @@
           <geom name="right_up_rack_col_50" class="collision" type="mesh" mesh="right_up_rack_col_50_mesh" />
           <geom name="right_up_rack_col_51" class="collision" type="mesh" mesh="right_up_rack_col_51_mesh" />
           <body name="right_up_finger" pos="0 0 0">
-            <inertial mass="0.024791" pos="0.0814673 0.00520891 0.0313" diaginertia="2.99755e-06 1.90315e-05 2.11877e-05" quat="0.725014 -0.688735 5.23537e-12 -7.20897e-12" />
-            <joint name="right_up_finger_x" type="slide" axis="1 0 0" range="0 0.06" damping="2.5" armature="0.01" />
-            <geom name="right_up_finger_visual" class="visual" mesh="right_up_finger_mesh" material="right_up_finger_mat" />
+            <inertial mass="0.0247902" pos="0.0814674 0.0052086 0.0312999" diaginertia="2.99735e-06 1.90308e-05 2.1187e-05" quat="0.725015 -0.688733 3.22601e-09 2.10068e-08" />
+            <joint name="right_up_finger_x" type="slide" axis="1 0 0" range="0 0.065" damping="2.5" armature="0.01" />
+            <geom name="right_up_finger_visual" class="visual" mesh="right_up_finger_visual_mesh" material="right_up_finger_mat" />
             <geom name="right_up_finger_col_00" class="collision" type="mesh" mesh="right_up_finger_col_00_mesh" />
             <geom name="right_up_finger_col_01" class="collision" type="mesh" mesh="right_up_finger_col_01_mesh" />
             <geom name="right_up_finger_col_02" class="collision" type="mesh" mesh="right_up_finger_col_02_mesh" />
@@ -806,9 +885,11 @@
         </body>
       </body>
       <body name="left_down_rack" pos="0 0 0">
-        <inertial mass="0.082751" pos="0.064461 -0.0123372 0.0024062" diaginertia="3.57485e-05 0.00013603 0.000159181" quat="0.978909 0.0366368 0.0376734 -0.197424" />
-        <joint name="left_down_y" type="slide" axis="0 -1 0" range="0 0.0526317" damping="12" armature="0.02" />
-        <geom name="left_down_rack_visual" class="visual" mesh="left_down_rack_mesh" material="left_down_rack_mat" />
+        <inertial mass="0.0814809" pos="0.0643542 -0.0121826 0.0024762" diaginertia="3.51355e-05 0.000134317 0.000157333" quat="0.978949 0.035126 0.0376106 -0.19751" />
+        <joint name="left_down_y" type="slide" axis="0 -1 0" range="0 0.052" damping="12" armature="0.02" />
+        <geom name="left_down_rack_visual_steel" class="visual" mesh="left_down_rack_visual_steel_mesh" material="left_down_rack_mat" />
+        <geom name="left_down_rack_visual_nylon" class="visual" mesh="left_down_rack_visual_nylon_mesh" material="left_down_rack_mat" />
+        <geom name="left_down_rack_visual_red" class="visual" mesh="left_down_rack_visual_red_mesh" material="left_down_rack_mat" />
         <geom name="left_down_rack_col_00" class="collision" type="mesh" mesh="left_down_rack_col_00_mesh" />
         <geom name="left_down_rack_col_01" class="collision" type="mesh" mesh="left_down_rack_col_01_mesh" />
         <geom name="left_down_rack_col_02" class="collision" type="mesh" mesh="left_down_rack_col_02_mesh" />
@@ -860,9 +941,9 @@
         <geom name="left_down_rack_col_48" class="collision" type="mesh" mesh="left_down_rack_col_48_mesh" />
         <geom name="left_down_rack_col_49" class="collision" type="mesh" mesh="left_down_rack_col_49_mesh" />
         <body name="left_down_finger" pos="0 0 0">
-          <inertial mass="0.024791" pos="0.0814673 -0.00520891 0.000700038" diaginertia="2.99755e-06 1.90315e-05 2.11877e-05" quat="0.725014 -0.688735 -5.23545e-12 7.20889e-12" />
-          <joint name="left_down_finger_x" type="slide" axis="1 0 0" range="0 0.06" damping="2.5" armature="0.01" />
-          <geom name="left_down_finger_visual" class="visual" mesh="left_down_finger_mesh" material="left_down_finger_mat" />
+          <inertial mass="0.0247902" pos="0.0814674 -0.0052086 0.000700061" diaginertia="2.99735e-06 1.90308e-05 2.1187e-05" quat="0.725015 -0.688733 -3.22601e-09 -2.10068e-08" />
+          <joint name="left_down_finger_x" type="slide" axis="1 0 0" range="0 0.065" damping="2.5" armature="0.01" />
+          <geom name="left_down_finger_visual" class="visual" mesh="left_down_finger_visual_mesh" material="left_down_finger_mat" />
           <geom name="left_down_finger_col_00" class="collision" type="mesh" mesh="left_down_finger_col_00_mesh" />
           <geom name="left_down_finger_col_01" class="collision" type="mesh" mesh="left_down_finger_col_01_mesh" />
           <geom name="left_down_finger_col_02" class="collision" type="mesh" mesh="left_down_finger_col_02_mesh" />
@@ -895,9 +976,11 @@
         </body>
       </body>
       <body name="right_down_rack" pos="0 0 0">
-        <inertial mass="0.0827511" pos="0.064461 0.0123373 -0.00240619" diaginertia="3.57485e-05 0.000136031 0.000159182" quat="0.978908 0.036637 -0.0376733 0.197425" />
-        <joint name="right_down_y" type="slide" axis="0 1 0" range="0 0.0526317" damping="12" armature="0.02" />
-        <geom name="right_down_rack_visual" class="visual" mesh="right_down_rack_mesh" material="right_down_rack_mat" />
+        <inertial mass="0.0814797" pos="0.0643537 0.0121821 -0.00247579" diaginertia="3.51356e-05 0.000134314 0.000157331" quat="0.97895 0.0351244 -0.0376174 0.197507" />
+        <joint name="right_down_y" type="slide" axis="0 1 0" range="0 0.052" damping="12" armature="0.02" />
+        <geom name="right_down_rack_visual_steel" class="visual" mesh="right_down_rack_visual_steel_mesh" material="right_down_rack_mat" />
+        <geom name="right_down_rack_visual_nylon" class="visual" mesh="right_down_rack_visual_nylon_mesh" material="right_down_rack_mat" />
+        <geom name="right_down_rack_visual_red" class="visual" mesh="right_down_rack_visual_red_mesh" material="right_down_rack_mat" />
         <geom name="right_down_rack_col_00" class="collision" type="mesh" mesh="right_down_rack_col_00_mesh" />
         <geom name="right_down_rack_col_01" class="collision" type="mesh" mesh="right_down_rack_col_01_mesh" />
         <geom name="right_down_rack_col_02" class="collision" type="mesh" mesh="right_down_rack_col_02_mesh" />
@@ -952,9 +1035,9 @@
         <geom name="right_down_rack_col_51" class="collision" type="mesh" mesh="right_down_rack_col_51_mesh" />
         <geom name="right_down_rack_col_52" class="collision" type="mesh" mesh="right_down_rack_col_52_mesh" />
         <body name="right_down_finger" pos="0 0 0">
-          <inertial mass="0.024791" pos="0.0814673 0.00520891 -0.000700038" diaginertia="2.99755e-06 1.90315e-05 2.11877e-05" quat="0.725014 -0.688735 5.23545e-12 -7.20889e-12" />
-          <joint name="right_down_finger_x" type="slide" axis="1 0 0" range="0 0.06" damping="2.5" armature="0.01" />
-          <geom name="right_down_finger_visual" class="visual" mesh="right_down_finger_mesh" material="right_down_finger_mat" />
+          <inertial mass="0.0247902" pos="0.0814674 0.0052086 -0.000700061" diaginertia="2.99735e-06 1.90308e-05 2.1187e-05" quat="0.725015 -0.688733 3.22601e-09 2.10068e-08" />
+          <joint name="right_down_finger_x" type="slide" axis="1 0 0" range="0 0.065" damping="2.5" armature="0.01" />
+          <geom name="right_down_finger_visual" class="visual" mesh="right_down_finger_visual_mesh" material="right_down_finger_mat" />
           <geom name="right_down_finger_col_00" class="collision" type="mesh" mesh="right_down_finger_col_00_mesh" />
           <geom name="right_down_finger_col_01" class="collision" type="mesh" mesh="right_down_finger_col_01_mesh" />
           <geom name="right_down_finger_col_02" class="collision" type="mesh" mesh="right_down_finger_col_02_mesh" />
@@ -984,12 +1067,12 @@
     <joint joint1="right_down_y" joint2="left_down_y" polycoef="0 1 0 0 0" solref="0.005 1" solimp="0.95 0.99 0.001" />
   </equality>
   <actuator>
-    <position name="m_down_pair" joint="left_down_y" ctrllimited="true" ctrlrange="0 0.0526317" kp="800" kv="8" forcelimited="true" forcerange="-87 87" />
-    <position name="m_right_down_finger" joint="right_down_finger_x" ctrllimited="true" ctrlrange="0 0.06" kp="150" kv="1" forcelimited="true" forcerange="-87 87" />
-    <position name="m_left_down_finger" joint="left_down_finger_x" ctrllimited="true" ctrlrange="0 0.06" kp="150" kv="1" forcelimited="true" forcerange="-87 87" />
-    <position name="m_bridge_z" joint="bridge_z" ctrllimited="true" ctrlrange="0 0.06" kp="3000" kv="15" forcelimited="true" forcerange="-87 87" />
-    <position name="m_up_pair" joint="left_up_y" ctrllimited="true" ctrlrange="0 0.0526317" kp="800" kv="8" forcelimited="true" forcerange="-87 87" />
-    <position name="m_right_up_finger" joint="right_up_finger_x" ctrllimited="true" ctrlrange="0 0.06" kp="150" kv="1" forcelimited="true" forcerange="-87 87" />
-    <position name="m_left_up_finger" joint="left_up_finger_x" ctrllimited="true" ctrlrange="0 0.06" kp="150" kv="1" forcelimited="true" forcerange="-87 87" />
+    <position name="m_down_pair" joint="left_down_y" ctrllimited="true" ctrlrange="0 0.052" kp="800" kv="8" forcelimited="true" forcerange="-87 87" />
+    <position name="m_right_down_finger" joint="right_down_finger_x" ctrllimited="true" ctrlrange="0 0.065" kp="150" kv="1" forcelimited="true" forcerange="-87 87" />
+    <position name="m_left_down_finger" joint="left_down_finger_x" ctrllimited="true" ctrlrange="0 0.065" kp="150" kv="1" forcelimited="true" forcerange="-87 87" />
+    <position name="m_bridge_z" joint="bridge_z" ctrllimited="true" ctrlrange="0 0.052" kp="3000" kv="15" forcelimited="true" forcerange="-87 87" />
+    <position name="m_up_pair" joint="left_up_y" ctrllimited="true" ctrlrange="0 0.052" kp="800" kv="8" forcelimited="true" forcerange="-87 87" />
+    <position name="m_right_up_finger" joint="right_up_finger_x" ctrllimited="true" ctrlrange="0 0.065" kp="150" kv="1" forcelimited="true" forcerange="-87 87" />
+    <position name="m_left_up_finger" joint="left_up_finger_x" ctrllimited="true" ctrlrange="0 0.065" kp="150" kv="1" forcelimited="true" forcerange="-87 87" />
   </actuator>
 </mujoco>

@@ -1,0 +1,96 @@
+{
+  "_comment": "Body tree, joints, couplings and actuators for cartesian_hand_sim. Read only by common/pipeline/build_mjcf.py; unknown keys like this one are ignored. Structure was extracted from the Fusion design on 2026-08-28 and cross-checked with the designer -- see ../README.md for the Fusion-name mapping and the full derivation.",
+
+  "_ranges_note": "SIGN CONVENTION (2026-08-29): every joint axis points in its USEFUL direction, so q=0 is the export/rest pose (bridge down, fingers retracted, jaws shut) and POSITIVE q = lift / extend / open; all ranges are [0, travel]. TRAVELS ARE MEASURED ON HARDWARE (2026-09-06), superseding the CAD values: finger 65 mm, bridge_z 52 mm, jaw 52 mm per side. The CAD numbers they replace were finger and bridge_z 60 mm (their Fusion zero) and jaw 52.6317 mm (30 + 22.631707485, the rack drivers parked hard against their upper limit); ../EXPORT_NOTES.md still derives those and is kept as the export's own record, so expect it to disagree with this file. The right_*_y followers derive from their driver via the coupling. Measured on the built hand, so unlike the CAD values these are reachable, but they are still not checked against MuJoCo self-collision.",
+
+  "_force_note": "actuator_defaults.forcerange is inherited from the sibling Cartesian Hand (+-87 N, from a pinion radius of 8 mm), NOT derived for this design. This gripper's servo and pinion have not been measured. Re-derive before running any force-sensitive task.",
+
+  "options": {"timestep": 0.0005, "integrator": "implicitfast", "iterations": 100},
+
+  "tree": {
+    "base":              {"parent": "world"},
+    "bridge":            {"parent": "base"},
+    "left_up_rack":      {"parent": "bridge"},
+    "left_up_finger":    {"parent": "left_up_rack"},
+    "right_up_rack":     {"parent": "bridge"},
+    "right_up_finger":   {"parent": "right_up_rack"},
+    "left_down_rack":    {"parent": "base"},
+    "left_down_finger":  {"parent": "left_down_rack"},
+    "right_down_rack":   {"parent": "base"},
+    "right_down_finger": {"parent": "right_down_rack"}
+  },
+
+  "joints": {
+    "bridge_z": {
+      "body": "bridge", "type": "slide", "axis": [0, 0, 1],
+      "range": [0, 0.052], "damping": 40, "armature": 0.05
+    },
+
+    "left_up_y": {
+      "body": "left_up_rack", "type": "slide", "axis": [0, -1, 0],
+      "range": [0, 0.052], "damping": 12, "armature": 0.02
+    },
+    "right_up_y": {
+      "body": "right_up_rack", "type": "slide", "axis": [0, 1, 0],
+      "range": [0, 0.052], "damping": 12, "armature": 0.02
+    },
+    "left_down_y": {
+      "body": "left_down_rack", "type": "slide", "axis": [0, -1, 0],
+      "range": [0, 0.052], "damping": 12, "armature": 0.02
+    },
+    "right_down_y": {
+      "body": "right_down_rack", "type": "slide", "axis": [0, 1, 0],
+      "range": [0, 0.052], "damping": 12, "armature": 0.02
+    },
+
+    "left_up_finger_x": {
+      "body": "left_up_finger", "type": "slide", "axis": [1, 0, 0],
+      "range": [0, 0.065], "damping": 2.5, "armature": 0.01
+    },
+    "right_up_finger_x": {
+      "body": "right_up_finger", "type": "slide", "axis": [1, 0, 0],
+      "range": [0, 0.065], "damping": 2.5, "armature": 0.01
+    },
+    "left_down_finger_x": {
+      "body": "left_down_finger", "type": "slide", "axis": [1, 0, 0],
+      "range": [0, 0.065], "damping": 2.5, "armature": 0.01
+    },
+    "right_down_finger_x": {
+      "body": "right_down_finger", "type": "slide", "axis": [1, 0, 0],
+      "range": [0, 0.065], "damping": 2.5, "armature": 0.01
+    }
+  },
+
+  "_couplings_note": "Two rack pairs. Every jaw axis points OUTWARD (left jaws -Y, right jaws +Y), so the follower simply equals its driver: polycoef [0, 1, ...] means q(right) = q(left) and equal q is a symmetric open. The four *_finger_x joints are deliberately NOT coupled: each finger has its own servo (Fusion Motion Links 28/29 couple them, a CAD mistake confirmed by the designer).",
+
+  "couplings": [
+    {"joint1": "right_up_y",   "joint2": "left_up_y",   "polycoef": [0, 1, 0, 0, 0]},
+    {"joint1": "right_down_y", "joint2": "left_down_y", "polycoef": [0, 1, 0, 0, 0]}
+  ],
+
+  "_actuators_note": "7 actuators for 9 joints: the two coupled rack pairs take one each, the four fingers are independent. This matches the 7 FEETECH servos in the CAD one-for-one -- servo 3 drives bridge_z, servo 1 the down pair, servo 2 the up pair, servos 4-7 the four fingers. Gains are inherited from the sibling Cartesian Hand and have not been tuned for this design's masses.",
+
+  "actuator_defaults": {"type": "position", "forcerange": [-87, 87]},
+
+  "actuators": {
+    "m_bridge_z":          {"joint": "bridge_z",            "kp": 3000, "kv": 15},
+    "m_up_pair":           {"joint": "left_up_y",           "kp": 800,  "kv": 8},
+    "m_down_pair":         {"joint": "left_down_y",         "kp": 800,  "kv": 8},
+    "m_left_up_finger":    {"joint": "left_up_finger_x",    "kp": 150,  "kv": 1},
+    "m_right_up_finger":   {"joint": "right_up_finger_x",   "kp": 150,  "kv": 1},
+    "m_left_down_finger":  {"joint": "left_down_finger_x",  "kp": 150,  "kv": 1},
+    "m_right_down_finger": {"joint": "right_down_finger_x", "kp": 150,  "kv": 1}
+  },
+
+  "_collision_note": "Disabled for the first build: no CoACD pieces exist yet, and a visual-only model is enough to verify the mechanism, the ranges and the two couplings in the viewer. After running decompose_collision.py, set enabled to true and rebuild.",
+
+  "collision": {
+    "enabled": true,
+    "contype": 1,
+    "conaffinity": 0,
+    "friction": "1.0 0.005 0.0001",
+    "condim": 3,
+    "solref": "0.005 1",
+    "exclude_pairs": []
+  }
+}

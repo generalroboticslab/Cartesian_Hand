@@ -1,0 +1,63 @@
+{
+  "base": {
+    "include": [
+      "base_gripper (1):1",
+      "servos:1/FEETECH_HL_3915_Servo_Motor:1",
+      "gears:1/gear:7"
+    ]
+  },
+
+  "bridge": {
+    "include": [
+      "aux_gripper (1):1",
+      "servos:1/FEETECH_HL_3915_Servo_Motor:2",
+      "gears:1/gear:6",
+      "servos:1/FEETECH_HL_3915_Servo_Motor:3",
+      "gears:1/gear:5"
+    ]
+  },
+
+  "left_down_rack": {
+    "include": [
+      "fingers:1/finger (1):1",
+      "servos:1/FEETECH_HL_3915_Servo_Motor:5",
+      "gears:1/gear:3"
+    ]
+  },
+  "left_down_finger": {
+    "include": ["finger_tips:1/finger_tip (1):1"]
+  },
+
+  "right_down_rack": {
+    "include": [
+      "fingers:1/finger (1):5",
+      "servos:1/FEETECH_HL_3915_Servo_Motor:6",
+      "gears:1/gear:2"
+    ]
+  },
+  "right_down_finger": {
+    "include": ["finger_tips:1/finger_tip (1):2"]
+  },
+
+  "left_up_rack": {
+    "include": [
+      "fingers:1/finger (1):6",
+      "servos:1/FEETECH_HL_3915_Servo_Motor:4",
+      "gears:1/gear:4"
+    ]
+  },
+  "left_up_finger": {
+    "include": ["finger_tips:1/finger_tip (1):3"]
+  },
+
+  "right_up_rack": {
+    "include": [
+      "fingers:1/finger (1):7",
+      "servos:1/FEETECH_HL_3915_Servo_Motor:7",
+      "gears:1/gear:1"
+    ]
+  },
+  "right_up_finger": {
+    "include": ["finger_tips:1/finger_tip (1):4"]
+  }
+}
