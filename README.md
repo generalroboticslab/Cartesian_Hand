@@ -30,7 +30,7 @@ batched GPU MuJoCo.
 </div>
 
 35 objects, across laboratory, manufacturing and household settings. Objects that
-share a mechanism share a procedure — a new object keeps the sequence, the
+share a mechanism share a procedure: a new object keeps the sequence, the
 controller and the hand, and changes a few settings such as grasp height, stroke
 and force limit.
 
@@ -50,7 +50,7 @@ and force limit.
 > them and have not been re-run on the objects. See [Status](#status).
 
 The same procedures transfer to a humanoid. With a hand on each arm, one hand
-opens a centrifuge tube while the other pipettes into it; only the approach and
+opens a centrifuge tube while the other pipettes into it. Only the approach and
 grasp pose change.
 
 <div align="left">
@@ -63,23 +63,23 @@ grasp pose change.
   <img src="media/design-cad.jpg" width="380">
 </div>
 
-Four actuated fingertips, P1–P4. P1/P2 belong to the base gripper, P3/P4 to the
-auxiliary gripper, and the auxiliary gripper rides the vertical stage.
+Four actuated fingertips, P1 to P4. P1 and P2 belong to the base gripper, P3 and
+P4 to the auxiliary gripper, and the auxiliary gripper rides the vertical stage.
 
 | | |
 |---|---|
-| Joint speed | ≈ 60 mm/s |
+| Joint speed | ~ 60 mm/s |
 | Static hold, one gripper | 2 kg |
 | Mass | 850 g |
-| Size | ≈ 166 × 100 × 76 mm |
+| Size | ~ 166 x 100 x 76 mm |
 | Structure | 3D-printed PLA or nylon |
-| Cost | ≈ $500 |
+| Cost | ~ $500 |
 
-Travel is deliberately absent from that table. Five numbers for it are in
-circulation and none has been checked with a caliper. What the software enforces
-is `config.STANDARD_TRAVEL`: 55 mm on the fingers, 50 mm on the jaws and the z
-stage. Read [Known issues](docs/hardware.md#known-issues) before driving any DOF
-to a limit.
+Travel does not appear in the table. Five numbers are in circulation and none
+has been checked with a caliper. What the software enforces is
+`config.STANDARD_TRAVEL`: 55 mm on the fingers, 50 mm on the jaws and the z
+stage. Read [Known issues](docs/hardware.md#known-issues) before driving any
+DOF to a limit.
 
 ## Overview
 
@@ -97,7 +97,7 @@ Two controller forms share that pipeline:
 
 - `Policy.step` is the target for closed-loop manipulation. It runs every tick,
   keeps tensor state, composes reusable primitives, and is batch-friendly.
-- `Motions`/`TaskRunner` executes fixed `[N,J,K]` programs, still used for
+- `Motions` and `TaskRunner` execute fixed `[N,J,K]` programs, still used for
   zeroing and GUI-authored timelines.
 
 ## Requirements
@@ -105,7 +105,7 @@ Two controller forms share that pipeline:
 - Linux (developed on Ubuntu; serial paths assume `/dev/tty*`)
 - Python 3.8+
 - CMake 3.15+ and a C++17 compiler, to build the servo extension
-- Hardware is optional — everything below runs against `--mock` or MuJoCo
+- Hardware is optional. Everything below runs against `--mock` or MuJoCo.
 
 ## Installation
 
@@ -145,14 +145,14 @@ python -m cartesian_hand.sim --task zero
 python -m cartesian_hand.sim --task zero --n-envs 4096 --warp   # GPU, batched
 ```
 
-> **Zero the hand before trusting a millimetre.** Without a calibration, zero is
-> the *startup pose*. The travel clamp still applies, but relative to wherever
-> the hand happened to be, so starting mid-travel and driving a full stroke can
-> still run a carriage off its rail.
+> **Zero the hand before trusting a millimetre.** Without a calibration, zero
+> is the *startup pose*. The travel clamp still applies, but relative to
+> wherever the hand happened to be, so starting mid-travel and driving a full
+> stroke can still run a carriage off its rail.
 > See [Zeroing](docs/hardware.md#zeroing).
 
 No hardware on the bench? Start with `--mock`, and redirect
-`CARTESIAN_HAND_CALIB` first — a mock run otherwise overwrites a real hand's
+`CARTESIAN_HAND_CALIB` first. A mock run otherwise overwrites a real hand's
 calibration. See
 [Running without hardware](docs/internals.md#running-without-hardware).
 
@@ -193,9 +193,9 @@ Each fingertip is a fixed linear function of the joints, so the Jacobian is a
 constant `12 × 7` matrix of rank 7. That is what lets a manipulation be composed
 from linear primitives, and why `primitives.py` never solves an IK problem.
 
-Three things the table hides — DOF index is not servo ID, what `orientation` can
-and cannot fix, and why the ordering is authoritative for the simulation — are in
-[DOF indexing and orientation](docs/hardware.md#dof-indexing-and-orientation).
+Three things the table hides: DOF index is not servo ID, what `orientation` can
+and cannot fix, and why the ordering is authoritative for the simulation. They
+are in [DOF indexing and orientation](docs/hardware.md#dof-indexing-and-orientation).
 
 ## Documentation
 
@@ -243,30 +243,30 @@ python tests/test_trace.py            # check against the recorded traces
 python tests/test_trace.py --update   # re-record after an intended change
 ```
 
-One golden-trace check, no framework. It runs all eight tasks against a toy plant
-in millimetres and hashes every goal and every effort they command. What it can
-and cannot catch is stated exactly in
-[docs/hardware.md](docs/hardware.md#test-suite) — in particular, do not read a
+One golden-trace check, no framework. It runs all eight tasks against a toy
+plant in millimetres and hashes every goal and every effort they command. What
+it can and cannot catch is stated exactly in
+[docs/hardware.md](docs/hardware.md#test-suite). In particular, do not read a
 pass as evidence about grip force.
 
 ## Status
 
-This repository is the control stack, rewritten. It is not the code that produced
-the object results above, and the difference matters if you are deciding what to
-trust.
+This repository is the control stack, rewritten. It is not the code that
+produced the object results above, and the difference matters if you are
+deciding what to trust.
 
 Working on hardware: all seven servos enumerate, the loop holds 50 Hz with zero
 drops, and a 5 mm goal tracks to 0.01 mm of error.
 
 Not established here: no manipulation task in `cartesian_hand/tasks/` has
-completed on its physical object, total travel is CAD rather than measured, and
+completed on its physical object. Total travel is CAD rather than measured, and
 `counts_per_mm` has never been checked against a measured distance.
 
 Full measurements are in
 [Hardware status](docs/hardware.md#hardware-status); each gap has an entry under
-[Known issues](docs/hardware.md#known-issues). Read the travel one before driving
-a hand to a limit — the far end of every rail is open, and a carriage that passes
-it leaves its slider.
+[Known issues](docs/hardware.md#known-issues). Read the travel one before
+driving a hand to a limit. The far end of every rail is open, and a carriage
+that passes it leaves its slider.
 
 ## Citation
 
