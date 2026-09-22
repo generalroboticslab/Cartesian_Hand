@@ -1,7 +1,7 @@
 # Building `cartesian_hand.xml`
 
-The model is a build artifact. Never hand-edit `cartesian_hand.xml`; the four
-scripts here read `source/` + `meshes/` and emit it bit-identically.
+The XML is generated. Do not hand-edit it; the scripts in this directory
+read `source/` and `meshes/` and emit it bit-identically.
 
 ## Regenerate the XML (no extra dependencies)
 
@@ -11,35 +11,36 @@ python assets/cartesian_hand/cartesian_hand_creation.py --check    # exit 1 on d
 ```
 
 `--check` rebuilds each variant in memory, byte-compares against the committed
-file, and compiles it with MuJoCo. `nu == 7`, `njnt == 9`, `neq == 2`,
-`ngeom == 498` is what "OK" looks like for the graft-ready module.
+file, and compiles it with MuJoCo. For the graft-ready module, an OK line
+reports `nu == 7`, `njnt == 9`, `neq == 2`, `ngeom == 498`.
 
-Inputs it reads:
+The builder reads:
 
-- `source/kinematics.json` — body tree, 9 slide joints, 2 couplings, 7 actuators
-- `source/body_inertia.json` — per-body mass / CoM / inertia (placeholder density)
-- `meshes/` — 22 visual OBJs, named `{body}__{material}.obj`; 477 CoACD colliders
-  under `meshes/collision_pieces/`
+- `source/kinematics.json` -- body tree, 9 slide joints, 2 couplings, 7 actuators
+- `source/body_inertia.json` -- per-body mass, CoM, inertia at placeholder density
+- `meshes/` -- 22 visual OBJs named `{body}__{material}.obj`, plus 477 CoACD
+  colliders under `meshes/collision_pieces/`
 
-## Where the hardware is
+It also tries to cross-check against
+`mj_envs/asset_zoo/cartesian_hand/cartesian_hand_constants.py`, the mjlab config
+module. That file does not live in this repo, so the check is skipped when it is
+absent.
 
-- **CAD** — `assets/cartesian_hand/source/cartesian_hand_sim.step` (13.6 MB).
-  Fusion re-posed export of the Cartesian Hand, the only record of the
-  geometry. `step_to_obj.py` reads this file and rewrites the 10 (now 22
-  split by material) visual OBJs.
-- **OBJ meshes** — `assets/cartesian_hand/meshes/`. The split visual meshes
-  (`base__steel.obj`, `base__nylon.obj`, `base__red.obj`, ...) and the CoACD
-  collision pieces under `meshes/collision_pieces/`. Loaded directly by
-  MuJoCo via the `meshdir="meshes"` line in `cartesian_hand.xml`.
+## Where the geometry lives
 
-Optional cross-check against `mj_envs/asset_zoo/cartesian_hand/cartesian_hand_constants.py`
-(the mjlab config module, not in this repo) is skipped when that file is absent.
+- **CAD**: `assets/cartesian_hand/source/cartesian_hand_sim.step` (13.6 MB).
+  The Fusion re-posed export of the hand. `step_to_obj.py` reads this file and
+  rewrites the visual OBJs (10 bodies, each split by CAD material into
+  `{body}__{material}.obj`).
+- **OBJs**: `assets/cartesian_hand/meshes/`. The split visual meshes and the
+  CoACD pieces under `meshes/collision_pieces/`. MuJoCo loads them via the
+  `meshdir="meshes"` line in `cartesian_hand.xml`.
 
-## Regenerate the meshes (needs extra dependencies)
+## Regenerate the meshes (extra dependencies)
 
 The committed meshes and CoACD pieces stay as inputs because the upstream tools
-are not deterministic across versions. Only re-run the stages below when the
-geometry actually changed.
+are not deterministic across versions. Re-run the stages below only when the
+geometry has actually changed.
 
 ```bash
 # 1. Re-tessellate meshes/ from the Fusion STEP. Needs OCP (OpenCascade Python).
@@ -49,16 +50,16 @@ python assets/cartesian_hand/step_to_obj.py
 python assets/cartesian_hand/mesh_inertia.py
 
 # 3. Re-decompose collision geometry. Needs coacd + trimesh. Run only for bodies
-#    whose geometry changed -- refreshing unchanged bodies churns the diff for
-#    no gain, since CoACD is not piece-for-piece reproducible.
+#    whose geometry changed; refreshing unchanged bodies churns the diff for no
+#    gain, since CoACD is not piece-for-piece reproducible.
 python assets/cartesian_hand/decompose_collision.py base bridge
 
 # 4. Regenerate the XML.
 python assets/cartesian_hand/cartesian_hand_creation.py
 ```
 
-`source/cartesian_hand_sim.step` is the only record of the Fusion export and is
-the input to stage 1. Without it, only stages 2–4 can run.
+Stage 1 needs `source/cartesian_hand_sim.step`. Without it, only stages 2 to 4
+can run.
 
 ## Layout
 
