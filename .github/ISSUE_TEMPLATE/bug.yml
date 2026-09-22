@@ -1,0 +1,67 @@
+name: Bug report
+description: Something on real hardware or in simulation did not do what the docs say.
+labels: ["bug"]
+body:
+  - id: hand
+    type: input
+    attributes:
+      label: Hand
+      description: Which hand is this (hand_1, hand_2, or "sim" if no hardware)?
+      placeholder: hand_1
+    validations:
+      required: true
+
+  - id: os
+    type: input
+    attributes:
+      label: OS
+      description: Distro and version (Ubuntu 22.04, etc).
+    validations:
+      required: true
+
+  - id: python
+    type: input
+    attributes:
+      label: Python
+      description: "Output of `python --version` and which interpreter ran the command (`which python`)."
+    validations:
+      required: true
+
+  - id: pip-freeze
+    type: textarea
+    attributes:
+      label: pip freeze
+      description: "Output of `pip freeze | grep -iE 'cartesian|mujoco|torch|viser|hardware|ft_servo'`. The exact versions matter -- many bugs are version-specific."
+      render: shell
+    validations:
+      required: true
+
+  - id: command
+    type: textarea
+    attributes:
+      label: Command
+      description: The exact command you ran, copied from the terminal.
+      render: shell
+    validations:
+      required: true
+
+  - id: observed
+    type: textarea
+    attributes:
+      label: Observed
+      description: "What happened. Include the last ~30 lines of output, the exact error if any, and what you expected to happen instead."
+    validations:
+      required: true
+
+  - id: zeroed
+    type: input
+    attributes:
+      label: Has this hand been zeroed
+      description: "Yes / No / Sim. If Yes, when (date from `zero_offsets.json`). A stale calibration is a common cause of 'the hand does the wrong thing'."
+      placeholder: Yes, 2026-09-05
+
+  - id: hardware-state
+    type: textarea
+    attributes:
+      label: Hardware state, if applicable
+      description: "Anything you can see or touch: servo LEDs, voltages from `scan`, audible clicks, whether a particular joint binds."
