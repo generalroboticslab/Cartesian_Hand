@@ -39,46 +39,46 @@
     "goals_sha256": "106a33a5f938cb49"
   },
   "cap": {
-    "ticks": 4000,
+    "ticks": 1217,
     "final_mm": [
       20.0,
       55.0,
       55.0,
-      10.0,
+      15.0,
       25.0,
-      15.03,
+      1.68,
       0.0
     ],
-    "goals_sha256": "7f11b62a2d3d6b7a"
+    "goals_sha256": "f7d2ead2d61314b6"
   },
   "scissors": {
-    "ticks": 553,
+    "ticks": 453,
     "final_mm": [
       20.0,
       55.0,
       55.0,
-      34.78,
+      8.11,
       20.0,
       55.0,
       55.0
     ],
-    "goals_sha256": "92e669df653e1063"
+    "goals_sha256": "836a78a82bbf684f"
   },
   "screwdriver": {
-    "ticks": 2069,
+    "ticks": 589,
     "final_mm": [
-      20.0,
+      25.0,
       0.0,
-      0.0,
-      24.32,
+      40.0,
+      10.0,
       20.0,
       40.0,
       0.0
     ],
-    "goals_sha256": "4f1e9904c167e032"
+    "goals_sha256": "ace543bf6fd13a8c"
   },
   "syringe": {
-    "ticks": 3273,
+    "ticks": 1427,
     "final_mm": [
       20.0,
       0.0,
@@ -88,10 +88,10 @@
       0.0,
       0.0
     ],
-    "goals_sha256": "62fa591be35da433"
+    "goals_sha256": "1e6f2de9f66a8ad6"
   },
   "pipette": {
-    "ticks": 1827,
+    "ticks": 1056,
     "final_mm": [
       20.0,
       0.0,
@@ -99,8 +99,8 @@
       50.0,
       20.0,
       0.0,
-      24.61
+      0.0
     ],
-    "goals_sha256": "6dfa715203e6d004"
+    "goals_sha256": "4d96cdcf3be8e778"
   }
 }
