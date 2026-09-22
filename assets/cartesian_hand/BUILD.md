@@ -21,6 +21,17 @@ Inputs it reads:
 - `meshes/` — 22 visual OBJs, named `{body}__{material}.obj`; 477 CoACD colliders
   under `meshes/collision_pieces/`
 
+## Where the hardware is
+
+- **CAD** — `assets/cartesian_hand/source/cartesian_hand_sim.step` (13.6 MB).
+  Fusion re-posed export of the Cartesian Hand, the only record of the
+  geometry. `step_to_obj.py` reads this file and rewrites the 10 (now 22
+  split by material) visual OBJs.
+- **OBJ meshes** — `assets/cartesian_hand/meshes/`. The split visual meshes
+  (`base__steel.obj`, `base__nylon.obj`, `base__red.obj`, ...) and the CoACD
+  collision pieces under `meshes/collision_pieces/`. Loaded directly by
+  MuJoCo via the `meshdir="meshes"` line in `cartesian_hand.xml`.
+
 Optional cross-check against `mj_envs/asset_zoo/cartesian_hand/cartesian_hand_constants.py`
 (the mjlab config module, not in this repo) is skipped when that file is absent.
 
