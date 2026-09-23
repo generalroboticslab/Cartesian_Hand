@@ -271,12 +271,15 @@ that passes it leaves its slider.
 ## Citation
 
 ```bibtex
-@article{xia2026cartesianhand,
-  title   = {The Cartesian Hand: In-Hand Manipulation with All-Linear Fingers},
-  author  = {Xia, Boxi and Li, Bokuan and Shin, Ryan and Yang, Zijiang
-             and Liu, Jiaxun and Chen, Boyuan},
-  year    = {2026},
-  url     = {https://generalroboticslab.com/cartesian_handv1}
+@misc{xia2026cartesianhandinhandmanipulation,
+  title         = {The Cartesian Hand: In-Hand Manipulation with All-Linear Fingers},
+  author        = {Boxi Xia and Bokuan Li and Ryan Shin and Zijiang Yang
+                   and Jiaxun Liu and Boyuan Chen},
+  year          = {2026},
+  eprint        = {2609.25696},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2609.25696},
 }
 ```
 
