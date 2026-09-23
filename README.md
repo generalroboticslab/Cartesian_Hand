@@ -10,9 +10,16 @@ Duke University, [General Robotics Lab](https://generalroboticslab.com/).
 
 [Project page](https://generalroboticslab.com/cartesian_handv1) with full-length video of every object.
 
-<div align="left">
-  <img src="media/hero.webp" width="640">
-</div>
+<table>
+  <tr>
+    <td><img src="media/hero.webp" width="640"></td>
+    <td><img src="media/humanoid-bimanual.webp" width="640"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Bimanual manipulation</sub></td>
+    <td align="center"><sub>Same procedures on a humanoid</sub></td>
+  </tr>
+</table>
 
 Two parallel grippers hold different parts of an object. Four translating
 fingertips move those parts relative to each other. Every joint slides in a
@@ -45,10 +52,6 @@ a humanoid with one hand on each arm.
 
 The task files in `cartesian_hand/tasks/` are transcriptions of an earlier
 internal implementation. They have not been re-run on the objects yet.
-
-<div align="left">
-  <img src="media/humanoid-bimanual.webp" width="640">
-</div>
 
 ## The hand
 
