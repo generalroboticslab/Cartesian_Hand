@@ -7,7 +7,6 @@ with nanobind bindings, plus a bench CLI under `scripts/ft_servo_tools/`.
 
 ```bash
 pip install -e ".[studio]"               # builds the extension
-pip install -e ".[cli]"                  # adds tyro for the bench CLI
 pip install -e ".[gui]"                  # adds viser for the bench GUI
 ```
 
@@ -103,7 +102,7 @@ walks its own window along one drag at a time.
 it dies some other way:
 
 ```python
-FtServo("/dev/ttyACM0").enable_torques([7, 8, 9], False)
+open_driver("/dev/ttyACM0").enable_torques([7, 8, 9], False)
 ```
 
 ---
@@ -230,8 +229,8 @@ negative, so `-1` there *is* an error.
 
 **Saved zero offsets go stale by whole turns.** The within-turn encoder angle is
 absolute and survives power loss; the turn counter is RAM and restarts at zero.
-Positions stay plausible while being wrong. Recovery arithmetic is in the parent
-repo's README.
+Positions stay plausible while being wrong. Recovery arithmetic is in
+[`docs/hardware.md`](../../../docs/hardware.md#known-issues).
 
 **±32767 counts is ±8 turns** at 4096 counts/rev.
 
@@ -252,5 +251,5 @@ stale build tree.
 | `ft_servo_ext.cpp` | nanobind bindings, one docstring per method |
 | `INST.h`, `SCS.*`, `SCSerial.*`, `HLSCL.*` | vendor SDK, left alone |
 
-The bench CLI lives in the parent repo at `scripts/ft_servo_tools/`; this
-directory is just the C++ side.
+The bench CLI lives at `scripts/ft_servo_tools/`; this directory is just the
+C++ side.

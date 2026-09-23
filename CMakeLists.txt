@@ -45,8 +45,8 @@ nanobind_add_module(
 target_include_directories(ft_servo_ext PRIVATE ${FT_DIR})
 
 # --- wheel install layout (used by scikit-build-core) ---
-# The extension lands inside the package so `from .ft_servo_ext import FtServo`
-# resolves directly and the search fallback in driver.py stays unused.
+# The extension lands inside the package so servo.py's
+# `from .ft_servo_ext import FtServo` resolves.
 # The .py files are NOT installed here: scikit-build-core packages them (see
 # wheel.packages in pyproject.toml), which is what keeps -e installs editable.
 install(TARGETS ft_servo_ext LIBRARY DESTINATION cartesian_hand)

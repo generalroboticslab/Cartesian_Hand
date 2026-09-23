@@ -205,8 +205,8 @@ python scripts/ft_servo_tools/cli.py gui /dev/ttyACM0 --ids 7 8 9
 
 The GUI is worth having on the bench: a ping only proves that something answers
 to the new ID, while motion proves it is the servo in front of you. These tools
-take a device path and know nothing about hands, DOFs or millimetres. They need
-`pip install -e '.[cli]'`, or `[gui]` for the GUI. See
+take a device path and know nothing about hands, DOFs or millimetres. The GUI needs
+`pip install -e '.[gui]'`. See
 [`cartesian_hand/src/ft_servo/README.md`](../cartesian_hand/src/ft_servo/README.md).
 
 Renaming writes to the servo's EPROM and survives power cycles. Once renamed, the
