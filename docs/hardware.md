@@ -8,7 +8,8 @@ for the engine and backends.
 
 ## DOF indexing and orientation
 
-The DOF table in the [README](../README.md#the-hand) hides three things.
+The DOF table in [Configuring a new hand](#configuring-a-new-hand) hides three
+things.
 
 **DOF index is not servo ID.** The index is how the controller addresses a DOF
 and is the same on every hand. The servo ID is what answers on the serial bus and
@@ -84,37 +85,55 @@ installs its calibration.
 
 ## Configuration
 
-**`hand_1`, `hand_2` and `hand_3` are the three units built in our lab, not
-presets.** Every number measured on them in this file (torque floors, the z
-bisect, travel, zero offsets) is that unit's own. If you built your own hand,
-add an entry for it rather than borrowing one of ours:
+### Configuring a new hand
 
-```python
-MY_HAND = HandConfig(name="my_hand", port="/dev/serial/by-id/usb-...", first_servo_id=0,
-                     torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
-                     torque_stuck=(400, 400, 400, 800, 400, 400, 400))
-HANDS = {h.name: h for h in (HAND_1, HAND_2, HAND_3, MY_HAND)}
-```
+`config.py` ships `hand_1`, `hand_2` and `hand_3`, the three units built in our
+lab. They are not presets: every number measured on them in this file is that
+unit's own. A new build gets its own entry, in this order:
 
-Then run with `--hand my_hand`, or set `DEFAULT_HAND = "my_hand"`. The torque
-tables above are `hand_3`'s un-bisected values: a floor known to move real
-hardware, not a measurement of yours. Bisect `torque_min_to_move` on your unit
-(see [Motion gains](#motion-gains)), and measure travel with calipers before
-trusting `STANDARD_TRAVEL` (see [Known issues](#known-issues)).
+1. **Give the servos IDs**, one consecutive block in DOF order, so DOF *i* is
+   servo `first_servo_id + i` (see [Setting up a servo](#setting-up-a-servo)):
 
-**Add the entry before the first run.** With no `--hand`, `studio` picks the
-hand by which servo-ID block answers, so a fresh build numbered 0-6 without an
-entry of its own answers as `hand_3` and runs on `hand_3`'s torques, with no
-error. Once `my_hand` shares that block, the probe refuses with "2 hands
-answered", so pass `--hand my_hand` (or delete our entries from `HANDS`).
+   | DOF | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+   |---|---|---|---|---|---|---|---|
+   | joint | base jaw | base left finger | base right finger | z stage | aux jaw | aux left finger | aux right finger |
+   | axis | y | x | x | z | y | x | x |
+2. **Add the entry** at the bottom of the hands in `cartesian_hand/config.py`:
 
-A hand is one flat frozen dataclass, `HandConfig`, and the definition above is
-all of one.
+   ```python
+   MY_HAND = HandConfig(name="my_hand", port="/dev/serial/by-id/usb-...",
+                        first_servo_id=0)
+   HANDS = {h.name: h for h in (HAND_1, HAND_2, HAND_3, MY_HAND)}
+   ```
 
-The two torque tables have no default, on purpose: they are friction, friction is
-per unit, and a default is what tunes two hands with one edit.
+   Everything else comes from the shared tables at the top of the file, and
+   from here on every command takes `--hand my_hand`.
+3. **Check directions.** `python -m cartesian_hand.studio --hand my_hand`, then
+   drag each DOF's slider a few mm and confirm the real joint and the 3D model
+   move the same way. Keep moves small: before zeroing, 0 mm is wherever the
+   hand was at startup. A joint that moves the wrong way is mounted differently
+   from ours; read [DOF indexing](#dof-indexing-and-orientation) before
+   changing anything.
+4. **Measure the torque floor.** The default `torque_min_to_move` is an
+   unmeasured starting point that moves our hands with margin. Bisect yours per
+   DOF, a 5 mm move read after 3 s ([Motion gains](#motion-gains)); the bench
+   GUI has a torque slider per servo. Set it on the entry.
+5. **Measure travel** with calipers and set `travel_mm`. The default is CAD,
+   and the far end of each rail has no stop ([Known issues](#known-issues)).
+6. **Zero**: `python -m cartesian_hand.studio --hand my_hand --task zero`.
 
-Everything absent from that call comes from the shared tables at the top of
+After a known distance has been measured, `counts_per_mm=` overrides the value
+derived from the gear.
+
+Always pass `--hand`. With none, `studio` picks the hand by which servo-ID block
+answers. A build numbered 0-6 with no entry of its own therefore answers as
+`hand_3` and runs on `hand_3`'s numbers without an error; with an entry, the
+probe refuses because two hands answered.
+
+### How it is laid out
+
+A hand is one flat frozen dataclass, `HandConfig`.
+Everything absent from a hand's entry comes from the shared tables at the top of
 `cartesian_hand/config.py`. Only what is true of one unit and not the other is
 written per hand, which today is the serial port, where its servo IDs start, the
 torque floor and the transit speed. `DEFAULT_HAND` is `hand_3`, which is also
@@ -129,7 +148,8 @@ filling in identical `Motion` and `Geometry` objects. What is genuinely per-DOF
 lives in `LAYOUT` once rather than in seven objects per hand.
 
 `config.py` reads top to bottom: the shared tables (`LAYOUT` and the role names,
-`STANDARD_TRAVEL`, `STANDARD_SPEED`, `STANDARD_ACC`, `CALIB_PATH`,
+`STANDARD_TRAVEL`, `STANDARD_SPEED`, `STANDARD_ACC`,
+`STANDARD_TORQUE_MIN_TO_MOVE`, `CALIB_PATH`,
 `DEFAULT_HAND`), the one dataclass, the three hands, then the calibration file
 helpers. Nothing downstream holds a hardware constant of its own, so retuning a
 gear ratio or a travel limit never means opening control code.
@@ -156,7 +176,7 @@ reads as a large jump, the opposite of the stall it is watching for.
 
 ### Motion gains
 
-`torque_min_to_move`, `torque_stuck`, `speed` and `acc` each take a scalar or a
+`torque_min_to_move`, `speed` and `acc` each take a scalar or a
 per-DOF sequence. A wrong length raises at construction, not at the first servo
 write.
 
@@ -186,8 +206,6 @@ The zero seek presses each DOF into its stop at that hand's
 `torque_min_to_move`, the lightest push that still travels. Too much torque
 deflects the rack and records the stop long; too little stalls mid rail and
 records that as the stop. It is per hand because friction is per unit.
-`torque_stuck` is still set on every hand but nothing reads it; it is kept as a
-record of what each unit needed when the seek ran at a multiple of the floor.
 
 `counts_per_mm` is derived from the pitch diameter, but a real gear train is not
 its nominal drawing. After measuring a known travel, set it directly and the
@@ -204,12 +222,12 @@ before it goes into a hand. `hand_3` uses IDs 0-6, `hand_2` 7-13 and `hand_1`
 14-20, in `LAYOUT` order. Connect one servo at a time, or the rename is ambiguous and the
 new ID could collide with one already in use.
 
-Keep the blocks non-overlapping. They are the only thing that tells one hand from
-another over the bus, and `config.identify` uses them: `studio` with no `--hand`
-sync-reads each hand's block and opens whichever one answers. Two hands on one
-bus, or seven servos that answer where six should, is refused rather than
-guessed. A new hand needs a fresh block and an entry in `config.HANDS` (see
-[Configuration](#configuration)).
+The blocks are the only thing that tells one hand from another over the bus,
+and `config.identify` uses them: `studio` with no `--hand` sync-reads each
+hand's block and opens whichever one answers. Two hands answering, or seven
+servos that answer where six should, is refused rather than guessed. So a block
+that overlaps one of ours works, but only with `--hand`; pick 21 and up if you
+want the probe to find it (see [Configuring a new hand](#configuring-a-new-hand)).
 
 ```bash
 python scripts/ft_servo_tools/cli.py set-id /dev/ttyACM0 7

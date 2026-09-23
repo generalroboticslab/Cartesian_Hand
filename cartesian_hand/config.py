@@ -126,11 +126,7 @@ STANDARD_SPEED = (300, 300, 300, 500, 300, 300, 300)
 # seek and the park of the previous implementation used 200.
 STANDARD_ACC = 200
 
-# ── How to pick the two torques. The values live on each hand, below ─────────
-#
-# Both are friction measurements and friction is per unit, so there is no shared
-# default: a default is what tunes two hands with one edit, and the failure that
-# causes -- a stop recorded mid rail -- is silent.
+# ── How to pick `torque_min_to_move` ──────────────────────────────────────────
 #
 # `torque_min_to_move` is a FLOOR: below it the joint does not move. Pure
 # friction on the six horizontal DOFs, friction plus gravity on z, the only axis
@@ -143,8 +139,12 @@ STANDARD_ACC = 200
 # low and a seek stalls mid rail and records that as the datum; too high and
 # every stop is recorded long by the deflection. Bisect it, do not pad it.
 #
-# `torque_stuck` is UNUSED -- nothing reads it. Kept as the bisected record of
-# what each unit needed when the seek ran at a multiple of the floor.
+# It is friction, and friction is per unit, so every lab hand below states its
+# own. The default is a starting point for a new build, not a measurement: the
+# un-bisected values hand_1 and hand_3 run, known to move real hardware with
+# margin. A wrong floor fails silently (a stop recorded mid rail), so bisect
+# before trusting a zero.
+STANDARD_TORQUE_MIN_TO_MOVE = (250, 250, 250, 800, 250, 250, 250)
 
 # Project root, beside the checkout rather than inside the package directory:
 # a calibration costs a bench cycle to reproduce and `pip install -e .` wipes
@@ -179,12 +179,7 @@ class HandConfig:
     first_servo_id: int = 0
 
     travel_mm: Sequence[float] = STANDARD_TRAVEL      # per DOF, from 0.0
-    # No defaults, and keyword-only so they can stay grouped with the other
-    # gains: both are friction, friction is per unit, and a default is what
-    # tunes two hands with one edit. A new unit must state them. 0-1000,
-    # scalar or per DOF.
-    torque_min_to_move: Gain = field(kw_only=True)
-    torque_stuck: Gain = field(kw_only=True)
+    torque_min_to_move: Gain = STANDARD_TORQUE_MIN_TO_MOVE   # 0-1000; see above
     speed: Gain = STANDARD_SPEED
     acc: Gain = STANDARD_ACC
     control_hz: float = 50.0
@@ -226,7 +221,7 @@ class HandConfig:
             raise ValueError(f"[{self.name}] counts_per_mm must be finite and "
                              f"positive, got {self.counts_per_mm}")
         # Catch a wrong-length gain here rather than at the first servo write.
-        for gain in ("torque_min_to_move", "speed", "acc", "torque_stuck"):
+        for gain in ("torque_min_to_move", "speed", "acc"):
             self.gain_vector(gain)
 
     # ── Per-DOF tensors ───────────────────────────────────────────────────────
@@ -428,7 +423,7 @@ class HandConfig:
 #
 # The units built and tested in our lab -- not presets. A new build adds its own
 # entry (and its own ID block) rather than reusing one of these; see
-# docs/hardware.md#configuration. Everything a unit does not share with the
+# docs/hardware.md#configuring-a-new-hand. Everything a unit does not share with the
 # others, and nothing else. Anything absent here comes from the tables above.
 
 HAND_1 = HandConfig(
@@ -439,7 +434,6 @@ HAND_1 = HandConfig(
     # is the hand that recorded stops mid rail once, so these are the first
     # thing to measure if it does it again.
     torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
-    torque_stuck=(400, 400, 400, 800, 400, 400, 400), # not used
 )
 
 HAND_2 = HandConfig(
@@ -452,7 +446,6 @@ HAND_2 = HandConfig(
     # Bisected on this unit.
     # torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
     torque_min_to_move=(100, 100, 100, 400, 100, 100, 100),
-    torque_stuck=(400, 400, 400, 800, 300, 400, 400), # not used
 
     # Transit speed, what the sliders and ordinary task rows run at. The zero
     # seek does NOT use this any more: it asks for its own creep through
@@ -476,7 +469,6 @@ HAND_3 = HandConfig(
     # above -- command a 5mm move, read travel after 3s -- rather than trusting
     # this number long-term.
     torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
-    torque_stuck=(400, 400, 400, 800, 400, 400, 400), # not used, not bisected
 
     # Transit speed, what the sliders and ordinary task rows run at. The zero
     # seek does NOT use this any more: it asks for its own creep through

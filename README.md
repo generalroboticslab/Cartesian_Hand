@@ -126,13 +126,12 @@ task there reports `finished` without having held anything.
 
 With a hand plugged in. `config.py` ships the three hands built in our lab
 (`hand_1` to `hand_3`); add an entry for yours first, see
-[Configuration](docs/hardware.md#configuration):
+[Configuring a new hand](docs/hardware.md#configuring-a-new-hand):
 
 ```bash
-python -m cartesian_hand.studio --hand my_hand   # your entry in config.HANDS
-python -m cartesian_hand.studio                  # or pick the hand by servo IDs
-python -m cartesian_hand.studio --task zero      # zero it, headless
-python -m cartesian_hand.studio --teach          # limp, pose it by hand
+python -m cartesian_hand.studio --hand my_hand               # your entry in config.HANDS
+python -m cartesian_hand.studio --hand my_hand --task zero   # zero it, headless
+python -m cartesian_hand.studio --hand my_hand --teach       # limp, pose it by hand
 python -m cartesian_hand.release_torque          # emergency torque cut; port is hardcoded, edit it
 ```
 
