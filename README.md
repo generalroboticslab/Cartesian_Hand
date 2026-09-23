@@ -124,11 +124,13 @@ nothing else, so `zero` completes and manipulation tasks such as `cap` fail at
 their first probe. The MuJoCo model has no objects either, so a manipulation
 task there reports `finished` without having held anything.
 
-With the hand plugged in:
+With a hand plugged in. `config.py` ships the three hands built in our lab
+(`hand_1` to `hand_3`); add an entry for yours first, see
+[Configuration](docs/hardware.md#configuration):
 
 ```bash
-python -m cartesian_hand.studio                  # browser page at :8081
-python -m cartesian_hand.studio --hand hand_1    # skip the ID probe
+python -m cartesian_hand.studio --hand my_hand   # your entry in config.HANDS
+python -m cartesian_hand.studio                  # or pick the hand by servo IDs
 python -m cartesian_hand.studio --task zero      # zero it, headless
 python -m cartesian_hand.studio --teach          # limp, pose it by hand
 python -m cartesian_hand.release_torque          # emergency torque cut; port is hardcoded, edit it

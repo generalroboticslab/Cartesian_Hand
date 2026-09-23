@@ -84,14 +84,32 @@ installs its calibration.
 
 ## Configuration
 
-A hand is one flat frozen dataclass, `HandConfig`, and a hand definition is a
-few lines:
+**`hand_1`, `hand_2` and `hand_3` are the three units built in our lab, not
+presets.** Every number measured on them in this file (torque floors, the z
+bisect, travel, zero offsets) is that unit's own. If you built your own hand,
+add an entry for it rather than borrowing one of ours:
 
 ```python
-HAND_4 = HandConfig(name="hand_4", port="/dev/ttyACM0", first_servo_id=21,
-                    torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
-                    torque_stuck=(400, 400, 400, 800, 400, 400, 400))
+MY_HAND = HandConfig(name="my_hand", port="/dev/serial/by-id/usb-...", first_servo_id=0,
+                     torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
+                     torque_stuck=(400, 400, 400, 800, 400, 400, 400))
+HANDS = {h.name: h for h in (HAND_1, HAND_2, HAND_3, MY_HAND)}
 ```
+
+Then run with `--hand my_hand`, or set `DEFAULT_HAND = "my_hand"`. The torque
+tables above are `hand_3`'s un-bisected values: a floor known to move real
+hardware, not a measurement of yours. Bisect `torque_min_to_move` on your unit
+(see [Motion gains](#motion-gains)), and measure travel with calipers before
+trusting `STANDARD_TRAVEL` (see [Known issues](#known-issues)).
+
+**Add the entry before the first run.** With no `--hand`, `studio` picks the
+hand by which servo-ID block answers, so a fresh build numbered 0-6 without an
+entry of its own answers as `hand_3` and runs on `hand_3`'s torques, with no
+error. Once `my_hand` shares that block, the probe refuses with "2 hands
+answered", so pass `--hand my_hand` (or delete our entries from `HANDS`).
+
+A hand is one flat frozen dataclass, `HandConfig`, and the definition above is
+all of one.
 
 The two torque tables have no default, on purpose: they are friction, friction is
 per unit, and a default is what tunes two hands with one edit.
@@ -99,9 +117,10 @@ per unit, and a default is what tunes two hands with one edit.
 Everything absent from that call comes from the shared tables at the top of
 `cartesian_hand/config.py`. Only what is true of one unit and not the other is
 written per hand, which today is the serial port, where its servo IDs start, the
-torque floor and the transit speed. `config.HANDS` has three entries, `hand_1`
-to `hand_3`, and `DEFAULT_HAND` is `hand_3`. `hand_2` and `hand_3` share a port
-path because it names one USB adapter that has moved between them.
+torque floor and the transit speed. `DEFAULT_HAND` is `hand_3`, which is also
+what `--mock` and `sim` use when no `--hand` is given; offline, only its travel
+and speed tables matter. `hand_2` and `hand_3` share a port path because it
+names one USB adapter that moved between them.
 
 An earlier version nested `Dof`, `Motion` and `Geometry` inside `HandConfig`.
 Three extra types, a `cfg[dof].max_mm` to read one travel limit, and both hands
@@ -189,7 +208,8 @@ Keep the blocks non-overlapping. They are the only thing that tells one hand fro
 another over the bus, and `config.identify` uses them: `studio` with no `--hand`
 sync-reads each hand's block and opens whichever one answers. Two hands on one
 bus, or seven servos that answer where six should, is refused rather than
-guessed. A new hand needs a fresh block and an entry in `config.HANDS`.
+guessed. A new hand needs a fresh block and an entry in `config.HANDS` (see
+[Configuration](#configuration)).
 
 ```bash
 python scripts/ft_servo_tools/cli.py set-id /dev/ttyACM0 7

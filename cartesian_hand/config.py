@@ -426,8 +426,10 @@ class HandConfig:
 
 # ══ The hands ═════════════════════════════════════════════════════════════════
 #
-# Everything a unit does not share with the other one, and nothing else. Anything
-# absent here comes from the tables at the top of this file.
+# The units built and tested in our lab -- not presets. A new build adds its own
+# entry (and its own ID block) rather than reusing one of these; see
+# docs/hardware.md#configuration. Everything a unit does not share with the
+# others, and nothing else. Anything absent here comes from the tables above.
 
 HAND_1 = HandConfig(
     name="hand_1", port="/dev/ttyACM0",
@@ -500,10 +502,10 @@ def identify(bus: Any, port: str | None = None) -> HandConfig:
     extension with no stubs, so there is nothing honest to name. Only
     `read_all` and `scan` are used here.
 
-    Every hand's DOFs are one consecutive ID block and the blocks do not overlap
-    (0-6 and 7-13), so the block that answers names the hand. That is the only
-    distinguishing feature: travel, gearing and control rate are identical across
-    the two, and none of them are readable over the bus anyway.
+    Every hand's DOFs are one consecutive ID block and the blocks do not overlap,
+    so the block that answers names the hand. That is the only distinguishing
+    feature: nothing else about a hand is readable over the bus. A new build
+    numbered 0-6 therefore matches `hand_3`.
 
     One sync-read per candidate, not `bus.scan`: a scan pays a reply timeout
     for all 254 unowned IDs to answer the same question. It is used only to
