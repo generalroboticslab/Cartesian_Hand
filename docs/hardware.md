@@ -84,17 +84,24 @@ installs its calibration.
 
 ## Configuration
 
-A hand is one flat frozen dataclass, `HandConfig`, and a hand definition is two
-lines:
+A hand is one flat frozen dataclass, `HandConfig`, and a hand definition is a
+few lines:
 
 ```python
-HAND_1 = HandConfig(name="hand_1", port="/dev/ttyACM0", first_servo_id=0)
+HAND_4 = HandConfig(name="hand_4", port="/dev/ttyACM0", first_servo_id=21,
+                    torque_min_to_move=(250, 250, 250, 800, 250, 250, 250),
+                    torque_stuck=(400, 400, 400, 800, 400, 400, 400))
 ```
+
+The two torque tables have no default, on purpose: they are friction, friction is
+per unit, and a default is what tunes two hands with one edit.
 
 Everything absent from that call comes from the shared tables at the top of
 `cartesian_hand/config.py`. Only what is true of one unit and not the other is
-written per hand, which today is the serial port, where its servo IDs start, and
-the zeroing creep torque.
+written per hand, which today is the serial port, where its servo IDs start, the
+torque floor and the transit speed. `config.HANDS` has three entries, `hand_1`
+to `hand_3`, and `DEFAULT_HAND` is `hand_3`. `hand_2` and `hand_3` share a port
+path because it names one USB adapter that has moved between them.
 
 An earlier version nested `Dof`, `Motion` and `Geometry` inside `HandConfig`.
 Three extra types, a `cfg[dof].max_mm` to read one travel limit, and both hands
@@ -103,8 +110,8 @@ filling in identical `Motion` and `Geometry` objects. What is genuinely per-DOF
 lives in `LAYOUT` once rather than in seven objects per hand.
 
 `config.py` reads top to bottom: the shared tables (`LAYOUT` and the role names,
-`STANDARD_TRAVEL`, `TORQUE_MIN_TO_MOVE`, `TORQUE_STUCK`, `CALIB_PATH`,
-`DEFAULT_HAND`), the one dataclass, the two hands, then the calibration file
+`STANDARD_TRAVEL`, `STANDARD_SPEED`, `STANDARD_ACC`, `CALIB_PATH`,
+`DEFAULT_HAND`), the one dataclass, the three hands, then the calibration file
 helpers. Nothing downstream holds a hardware constant of its own, so retuning a
 gear ratio or a travel limit never means opening control code.
 
@@ -113,8 +120,8 @@ out in enumeration order, so with two hands plugged in, a hardcoded number
 silently addresses whichever powered up first.
 
 Frozen matters for a concrete reason: the per-DOF tensors are cached per device,
-so mutating `cfg.torque` after anything has called `gain_vector` leaves the old
-torque in the cache and every later tick keeps commanding it. A docstring saying
+so mutating `cfg.speed` after anything has called `gain_vector` leaves the old
+speed in the cache and every later tick keeps commanding it. A docstring saying
 "immutable" does not stop that; `FrozenInstanceError` does. Use `variant()`,
 which drops the cache.
 
@@ -130,12 +137,13 @@ reads as a large jump, the opposite of the stall it is watching for.
 
 ### Motion gains
 
-`torque`, `speed` and `acc` each take a scalar or a per-DOF sequence. A wrong
-length raises at construction, not at the first servo write.
+`torque_min_to_move`, `torque_stuck`, `speed` and `acc` each take a scalar or a
+per-DOF sequence. A wrong length raises at construction, not at the first servo
+write.
 
 ```python
-HandConfig(..., torque=50)                              # all DOFs
-HandConfig(..., torque=[50, 50, 50, 300, 50, 50, 50])   # z stage at 300
+HandConfig(..., torque_min_to_move=250)                              # all DOFs
+HandConfig(..., torque_min_to_move=[250, 250, 250, 800, 250, 250, 250])  # z at 800
 ```
 
 Mixing values costs nothing. A sync-write is one broadcast packet in which each
@@ -149,32 +157,18 @@ lifting 30 mm to 35 mm and measuring travel after 3 s:
 |---|---|---|---|---|---|
 | moved (of 5.0 mm) | 1.50 | 4.54 | 4.54 | 4.54 | 4.53 |
 
-150 stalls outright, 200 tracks fully, and nothing above 200 helps. `TORQUE_MIN_TO_MOVE` uses 300, the measured floor plus margin, because the
-bisect ran unloaded and the stage has to lift the aux gripper while it is holding
+150 stalls outright, 200 tracks fully, and nothing above 200 helps. The hands
+set z's `torque_min_to_move` well above that, 400 on `hand_2` and 800 on the
+others, because the bisect ran unloaded and the stage has to lift the aux gripper while it is holding
 something. Pressing *down* at 50 works and tasks rely on it, so this is a floor
 for the lifting direction, not a correction to the whole axis.
 
-`torque_stuck` is separate from `torque`, because zeroing presses each
-DOF into its stop and the stall is the signal rather than a fault. Too much
-torque binds before the stop, too little stalls short of it, and both read as a
-hard stop in the wrong place.
-
-It is per hand rather than one shared table, because the window between those two
-failures is set by friction and friction is per unit: raising the number for a
-stiff gear train would also push a looser hand's fingers through the stall window
-and past their stop. Travel and gearing are shared; this is not. Both hands
-currently run `TORQUE_STUCK`, the default, measured on `hand_2`. Retune one
-without touching the other:
-
-```python
-HAND_1 = HandConfig(name="hand_1", port="/dev/ttyACM0", first_servo_id=0,
-                    torque_stuck=(200, 60, 60, 300, 200, 60, 60))
-```
-
-The fingers came down from 80 to 50 after they climbed a gear tooth on `hand_2`:
-at 80 the creep carried enough momentum that the stall window could not catch it
-before it overshot. If a joint still sounds loaded at the end of a seek, come
-down further on that hand.
+The zero seek presses each DOF into its stop at that hand's
+`torque_min_to_move`, the lightest push that still travels. Too much torque
+deflects the rack and records the stop long; too little stalls mid rail and
+records that as the stop. It is per hand because friction is per unit.
+`torque_stuck` is still set on every hand but nothing reads it; it is kept as a
+record of what each unit needed when the seek ran at a multiple of the floor.
 
 `counts_per_mm` is derived from the pitch diameter, but a real gear train is not
 its nominal drawing. After measuring a known travel, set it directly and the
@@ -187,8 +181,8 @@ HandConfig(..., counts_per_mm=80.0)
 ## Setting up a servo
 
 Servos ship with an ID that collides with the rest of the bus, so each is renamed
-before it goes into a hand. `hand_1` uses IDs 0-6 and `hand_2` uses 7-13, in
-`LAYOUT` order. Connect one servo at a time, or the rename is ambiguous and the
+before it goes into a hand. `hand_3` uses IDs 0-6, `hand_2` 7-13 and `hand_1`
+14-20, in `LAYOUT` order. Connect one servo at a time, or the rename is ambiguous and the
 new ID could collide with one already in use.
 
 Keep the blocks non-overlapping. They are the only thing that tells one hand from
@@ -244,13 +238,12 @@ What has run on servos:
 
 Not yet established:
 
-- No direct manipulation policy has completed on its physical object. The
-  canonical `--task cap` path does complete through the real `studio.live` bus
-  executor with `MockServo` providing bottle/cap stops. This exercises the actual
-  command conversion, low-speed contact approach, persistent grip, per-phase
-  effort, and extraction sequence; only the mechanics are mocked. The stock
-  MuJoCo model has no equivalent objects, so object simulation is not used as a
-  completion gate.
+- No direct manipulation policy has completed on its physical object, and
+  none completes offline either. `--mock` has no object in the jaws, so
+  `studio --mock --task cap` fails at its first probe; `MockServo.set_stops`
+  can add one from Python, but no CLI flag does. The stock MuJoCo model has no
+  objects, so `sim --task cap` prints `finished` without having touched
+  anything.
 - The four tasks ported from an earlier internal implementation are
   transcriptions. `screwdriver`, `pipette`, `syringe` and `scissors` enter the
   real executor path correctly, but the *sequences* are what was validated on

@@ -61,12 +61,12 @@ below-floor torque does not travel at all.
 **z is not excluded, and an earlier version of this file said it was.** The
 exemption reasoned that z's resistance is gravity rather than friction and that
 a descent should command less, so `Sequence` left `travel_effort[Z]` at the flat
-travel torque — 50 against a measured z floor of 800 on both hands. `cap`'s
+travel torque — 50 against a z floor of 400 to 800. `cap`'s
 descent names z with no explicit effort, so it could not move the stage at all,
 burned its deadline, and retired the environment, which silently skipped every
 row after it. Both halves of the reasoning are wrong: effort is a force *cap*,
 so a free descent never approaches it and the exemption bought no gentleness,
-and 50 against a floor of 800 is immobile in both directions.
+and 50 against that floor is immobile in both directions.
 `Sequence.travel_effort` is now `maximum(flat, floor)` on every DOF.
 
 An explicit `effort=` on a row is still not floored, which is deliberate: a row

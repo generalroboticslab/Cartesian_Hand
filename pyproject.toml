@@ -7,7 +7,7 @@ name = "cartesian-hand"
 version = "0.2.0"
 description = "7-DOF FT servo gripper controller (cartesian hand)"
 license = "Apache-2.0"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = ["numpy", "torch", "tyro>=0.9"]
 
 [project.optional-dependencies]

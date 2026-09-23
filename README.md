@@ -98,32 +98,45 @@ window, and `gui` pulls viser for the bench CLI's GUI subcommand. The batched
 GPU path additionally needs `warp` and `mujoco_warp`, which are not declared
 because they are not on PyPI under stable names.
 
-`pip install` compiles the nanobind extension (`ft_servo_ext`) from the C++
-driver under `cartesian_hand/src/ft_servo/`. The first build needs CMake 3.15+
-and a C++17 compiler. To skip the build, install without the `studio` extra;
-`servo.open_driver` imports the extension inside the call rather than at
-module scope, so importing the package never touches hardware.
+Needs Python 3.10+ on Linux (macOS untested; Windows does not build, the serial
+driver uses `termios`). Every `pip install` compiles the nanobind extension
+(`ft_servo_ext`) from the C++ driver under `cartesian_hand/src/ft_servo/`, so
+CMake 3.15+ and a C++17 compiler are required even without hardware.
+`servo.open_driver` imports the extension inside the call, so importing the
+package never touches a serial port.
 
 ## Quick start
 
-```bash
-# hardware
-python -m cartesian_hand.studio                          # browser page at :8081
-python -m cartesian_hand.studio --hand hand_1            # skip the ID probe
-python -m cartesian_hand.studio --task zero              # zero it, headless
-python -m cartesian_hand.studio --mock --seconds 5       # no hardware attached
-python -m cartesian_hand.studio --teach                  # limp, pose it by hand
+No hardware? Run the studio on a fake servo bus and open http://localhost:8081.
+The 3D hand follows the sliders and the task buttons. `sim` runs the same task
+files in MuJoCo, headless, and prints the final millimetres.
 
-# simulation, same task files (object-free tasks only for now)
-python -m cartesian_hand.sim --task zero
-python -m cartesian_hand.sim --task zero --n-envs 4096 --warp   # GPU, batched
+```bash
+export CARTESIAN_HAND_CALIB=/tmp/zero_offsets.json   # keep mock zeroing off a real hand's file
+python -m cartesian_hand.studio --mock                        # browser page at :8081
+python -m cartesian_hand.studio --mock --task zero            # zero the fake hand
+python -m cartesian_hand.sim --task zero                      # CPU MuJoCo
+python -m cartesian_hand.sim --task zero --n-envs 4096 --warp  # GPU, batched
+```
+
+Neither has an object to hold. The fake bus has stops at the ends of travel and
+nothing else, so `zero` completes and manipulation tasks such as `cap` fail at
+their first probe. The MuJoCo model has no objects either, so a manipulation
+task there reports `finished` without having held anything.
+
+With the hand plugged in:
+
+```bash
+python -m cartesian_hand.studio                  # browser page at :8081
+python -m cartesian_hand.studio --hand hand_1    # skip the ID probe
+python -m cartesian_hand.studio --task zero      # zero it, headless
+python -m cartesian_hand.studio --teach          # limp, pose it by hand
+python -m cartesian_hand.release_torque          # emergency torque cut; port is hardcoded, edit it
 ```
 
 Zero the hand before trusting a millimetre. Without calibration, zero is the
 startup pose, so starting mid-travel and driving a full stroke can run a
-carriage off its rail. See [Zeroing](docs/hardware.md#zeroing). No hardware on
-the bench? Start with `--mock` and redirect `CARTESIAN_HAND_CALIB` first; a
-mock run otherwise overwrites a real hand's calibration.
+carriage off its rail. See [Zeroing](docs/hardware.md#zeroing).
 
 Simulation uses the MuJoCo model bundled at `assets/cartesian_hand/`, so no
 external checkout is needed. Every entry point is
