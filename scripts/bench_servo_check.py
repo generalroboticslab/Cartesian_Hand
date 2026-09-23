@@ -7,7 +7,7 @@ Edit PORT and SERVO_ID below, then:
 
 import time
 
-from hardware_bindings.ft_servo import FtServo
+from cartesian_hand.servo import open_driver as FtServo
 
 PORT = "/dev/ttyACM0"
 SERVO_ID = 20

@@ -198,16 +198,16 @@ bus, or seven servos that answer where six should, is refused rather than
 guessed. A new hand needs a fresh block and an entry in `config.HANDS`.
 
 ```bash
-python -m hardware_bindings.ft_servo set-id /dev/ttyACM0 7
-python -m hardware_bindings.ft_servo scan /dev/ttyACM0
-python -m hardware_bindings.ft_servo gui /dev/ttyACM0 --ids 7 8 9
+python scripts/ft_servo_tools/cli.py set-id /dev/ttyACM0 7
+python scripts/ft_servo_tools/cli.py scan /dev/ttyACM0
+python scripts/ft_servo_tools/cli.py gui /dev/ttyACM0 --ids 7 8 9
 ```
 
 The GUI is worth having on the bench: a ping only proves that something answers
 to the new ID, while motion proves it is the servo in front of you. These tools
 take a device path and know nothing about hands, DOFs or millimetres. They need
-`pip install -e './hardware_bindings[cli]'`, or `[gui]` for the GUI. See
-[`hardware_bindings/ft_servo/README.md`](../hardware_bindings/ft_servo/README.md).
+`pip install -e '.[cli]'`, or `[gui]` for the GUI. See
+[`cartesian_hand/src/ft_servo/README.md`](../cartesian_hand/src/ft_servo/README.md).
 
 Renaming writes to the servo's EPROM and survives power cycles. Once renamed, the
 only way to find a servo again is to scan for it.
@@ -362,11 +362,3 @@ hardware, is still to be connected up.
 session a 5 mm goal produced 0.09 mm of motion. Driving it ±400 counts a few
 times freed it, after which the identical command tracked to 4.99 mm. The symptom
 to recognise is full travel in one direction and about 20% in the other.
-
-**Two servo drivers.** `hardware_bindings/ft_servo/ft_servo_python_only.py`
-reimplements the same SCS wire protocol as the compiled extension, over
-`pyserial`, and now has no importers at all: 404 lines reachable only by typing
-its path. `set_position_offset` plus raw `unlock_eprom` and `lock_eprom` are the
-only things it can still do that the extension cannot. Either bind those three
-and delete the file, or keep it and accept that two drivers have to stay in
-agreement with nothing enforcing it.

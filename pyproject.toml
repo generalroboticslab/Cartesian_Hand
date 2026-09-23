@@ -14,8 +14,8 @@ dependencies = ["numpy", "torch", "tyro>=0.9"]
 sim = ["mujoco"]               # the CPU MuJoCo backend in sim.py
 studio = ["viser", "mujoco"]   # studio.py imports both at module scope: the page
                                # is viser, but it draws the mujoco meshes
-serial = ["pyserial"]          # only for ft_servo_python_only, the unused second driver
 camera = ["opencv-python"]     # only for the studio page's --camera window
+gui = ["viser"]                # scripts/ft_servo_tools/cli.py gui subcommand
 
 [tool.scikit-build]
 cmake.build-type = "Release"

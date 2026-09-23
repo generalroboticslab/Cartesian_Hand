@@ -94,13 +94,13 @@ pip install -e ".[sim,studio]"
 
 `torch` is a core dependency. The extras: `sim` pulls MuJoCo, `studio` pulls
 viser for the browser page, `camera` pulls OpenCV for the studio's camera
-window, and `serial` pulls pyserial for the pure-Python servo driver. The
-batched GPU path additionally needs `warp` and `mujoco_warp`, which are not
-declared because they are not on PyPI under stable names.
+window, and `gui` pulls viser for the bench CLI's GUI subcommand. The batched
+GPU path additionally needs `warp` and `mujoco_warp`, which are not declared
+because they are not on PyPI under stable names.
 
-`pip install` compiles the nanobind extension (`ft_servo_ext`) around the C++
-driver under `hardware_bindings/`. The first build needs CMake 3.15+ and a
-C++17 compiler. To skip the build, install without the `studio` extra;
+`pip install` compiles the nanobind extension (`ft_servo_ext`) from the C++
+driver under `cartesian_hand/src/ft_servo/`. The first build needs CMake 3.15+
+and a C++17 compiler. To skip the build, install without the `studio` extra;
 `servo.open_driver` imports the extension inside the call rather than at
 module scope, so importing the package never touches hardware.
 

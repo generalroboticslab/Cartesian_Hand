@@ -23,22 +23,14 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
 find_package(nanobind CONFIG REQUIRED)
 
-# Servo driver sources come from the hardware_bindings submodule rather than a
-# copy in this repo. They used to be duplicated under src/, which drifted: the
-# fork gained write_id and a position-encoding fix that were never pushed back,
-# and edited INST.h in a way that changed the RESET and CAL opcodes away from
-# the values the vendor SCS.cpp expects. Both fixes are upstream now, so there
-# is one copy again.
-#
-# Only ft_servo/ is compiled here. The submodule's own top-level CMakeLists also
-# builds motor/ and imu/ and requires Eigen3, CSerialPort and fmt; this gripper
-# uses none of them, so we name the sources directly instead of add_subdirectory.
-set(FT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/hardware_bindings/ft_servo)
+# Servo driver sources. The vendor SDK (HLSCL, SCS, SCSerial) and the driver
+# wrapper live under cartesian_hand/src/ft_servo/ so the build has no
+# dependency on an external checkout.
+set(FT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cartesian_hand/src/ft_servo)
 
 if(NOT EXISTS ${FT_DIR}/ft_servo_ext.cpp)
   message(FATAL_ERROR
-    "hardware_bindings/ft_servo is empty. Run:\n"
-    "  git submodule update --init --recursive")
+    "cartesian_hand/src/ft_servo/ is empty. Sources are checked in; restore them.")
 endif()
 
 set(FT_SRC ${FT_DIR}/HLSCL.cpp ${FT_DIR}/SCS.cpp ${FT_DIR}/SCSerial.cpp)

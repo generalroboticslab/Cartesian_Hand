@@ -1,9 +1,9 @@
 """Bench tools for a raw servo bus: scan it, rename a servo, drive it by hand.
 
-    python -m hardware_bindings.ft_servo        <port>              # the GUI
-    python -m hardware_bindings.ft_servo scan   <port> [--start 0] [--end 20]
-    python -m hardware_bindings.ft_servo set-id <port> <new-id> [--end 20]
-    python -m hardware_bindings.ft_servo gui    <port> [--ids 7 8 9]
+    python scripts/ft_servo_tools/cli.py        <port>              # the GUI
+    python scripts/ft_servo_tools/cli.py scan   <port> [--start 0] [--end 20]
+    python scripts/ft_servo_tools/cli.py set-id <port> <new-id> [--end 20]
+    python scripts/ft_servo_tools/cli.py gui    <port> [--ids 7 8 9]
 
 The GUI is the default because it does what the other two do -- it scans on
 open and can write an ID -- without needing to know either answer first. The
@@ -32,7 +32,7 @@ from typing import Annotated, List, Optional, Union
 
 import tyro
 
-from . import FtServo
+from cartesian_hand.servo import open_driver as FtServo
 
 NUDGE_COUNTS = 300      # ~2.5mm on a 16mm rack. Visible, and short enough to be safe.
 NUDGE_SPEED = 300
@@ -519,7 +519,7 @@ SUBCOMMANDS = ("scan", "set-id", "torque-limit", "gui")
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    # `python -m hardware_bindings.ft_servo <port>` opens the GUI. It is the one
+    # `python scripts/ft_servo_tools/cli.py <port>` opens the GUI. It is the one
     # subcommand you reach for before knowing what is on the bus, and it scans
     # and renames on its own now, so requiring the word "gui" only made the
     # quickest path the one you had to read the help for. A leading `-` still
@@ -532,7 +532,7 @@ def main(argv=None):
                _annotate(SetIdCmd, "set-id"),
                _annotate(TorqueLimitCmd, "torque-limit"),
                _annotate(GuiCmd, "gui"))],
-        args=argv, prog="python -m hardware_bindings.ft_servo")
+        args=argv, prog="python scripts/ft_servo_tools/cli.py")
     # The other half of "the hardware went away": unplugged before the tool
     # starts rather than during. A missing device is the ordinary case on a
     # bench, not a defect worth a traceback.

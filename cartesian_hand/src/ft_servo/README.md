@@ -1,19 +1,22 @@
 # ft_servo
 
 Driver for Feetech HLS-series serial bus servos (HLS3915 and relatives). C++
-with nanobind bindings, plus a bench CLI.
+with nanobind bindings, plus a bench CLI under `scripts/ft_servo_tools/`.
 
 ## Install
 
 ```bash
-pip install -e 'hardware_bindings[cli]'    # scan, set-id
-pip install -e 'hardware_bindings[gui]'    # adds the GUI (pulls viser)
+pip install -e ".[studio]"               # builds the extension
+pip install -e ".[cli]"                  # adds tyro for the bench CLI
+pip install -e ".[gui]"                  # adds viser for the bench GUI
 ```
 
-Importing the bindings needs neither extra:
+Importing the bindings needs none of those extras:
 
 ```python
-from hardware_bindings.ft_servo import FtServo
+from cartesian_hand.servo import open_driver
+
+drv = open_driver("/dev/ttyACM0")
 ```
 
 ---
@@ -21,7 +24,7 @@ from hardware_bindings.ft_servo import FtServo
 ## Quick start
 
 ```bash
-python -m hardware_bindings.ft_servo /dev/ttyACM0
+python scripts/ft_servo_tools/cli.py /dev/ttyACM0
 ```
 
 Opens the GUI. It scans on open, so you need not know what is on the bus, and it
@@ -32,9 +35,9 @@ The subcommands below do the same jobs one at a time, for scripts and for
 renaming without a browser.
 
 ```bash
-python -m hardware_bindings.ft_servo scan   /dev/ttyACM0
-python -m hardware_bindings.ft_servo set-id /dev/ttyACM0 7
-python -m hardware_bindings.ft_servo gui    /dev/ttyACM0 --ids 7 8 9
+python scripts/ft_servo_tools/cli.py scan   /dev/ttyACM0
+python scripts/ft_servo_tools/cli.py set-id /dev/ttyACM0 7
+python scripts/ft_servo_tools/cli.py gui    /dev/ttyACM0 --ids 7 8 9
 ```
 
 ---
@@ -108,9 +111,9 @@ FtServo("/dev/ttyACM0").enable_torques([7, 8, 9], False)
 ## Python
 
 ```python
-from hardware_bindings.ft_servo import FtServo
+from cartesian_hand.servo import open_driver
 
-drv = FtServo("/dev/ttyACM0")
+drv = open_driver("/dev/ttyACM0")
 ids = drv.scan(0, 20)
 
 drv.read_positions(ids)             # [-1621, 6424, -1170], or None per servo
@@ -119,11 +122,11 @@ drv.enable_torques(ids, False)
 drv.close()
 ```
 
-`example.py` is that, runnable — scan, read, move the whole bus 5mm and back,
-release. **It moves the hand.**
+`scripts/ft_servo_tools/example.py` is that, runnable — scan, read, move the
+whole bus 5mm and back, release. **It moves the hand.**
 
 ```bash
-python -m hardware_bindings.ft_servo.example /dev/ttyACM0
+python scripts/ft_servo_tools/example.py /dev/ttyACM0
 ```
 
 ```
@@ -232,13 +235,12 @@ repo's README.
 
 **±32767 counts is ±8 turns** at 4096 counts/rev.
 
-**A stale `.so` can shadow the installed one.** `__init__.py` searches
-`$FT_SERVO_EXT`, then this directory, then one level under every `sys.path`
-entry — newest first by mtime. That last glob also reaches a CMake `build/`
-tree, and under `python -m` the repo root joins `sys.path`, so path order once
-put a months-old artifact ahead of the real extension and silently lost every
-method added since. Symptom: `AttributeError` for a method you can see in the
-source. Fix: delete the stale build tree, or set `FT_SERVO_EXT`.
+**A stale `.so` can shadow the installed one.** `cartesian_hand.servo` imports
+`from .ft_servo_ext import FtServo`, so it only finds the extension installed
+inside the `cartesian_hand/` package. A CMake `build/` tree left in the repo
+root can still shadow the installed one on `sys.path`-by-`cwd` imports. Symptom:
+`AttributeError` for a method you can see in the source. Fix: delete the
+stale build tree.
 
 ---
 
@@ -248,15 +250,7 @@ source. Fix: delete the stale build tree, or set `FT_SERVO_EXT`.
 |---|---|
 | `ft_servo_driver.hpp` | the driver: locking, poll thread, sync-read/write |
 | `ft_servo_ext.cpp` | nanobind bindings, one docstring per method |
-| `__init__.py` | what `import` gives you: finds and loads the compiled `.so` |
-| `__main__.py` | what `python -m` runs: the CLI above |
-| `example.py` | runnable worked example |
 | `INST.h`, `SCS.*`, `SCSerial.*`, `HLSCL.*` | vendor SDK, left alone |
-| `ft_servo_python_only.py` | dead second driver — see below |
 
-`ft_servo_python_only.py` reimplements the same protocol over pyserial. Nothing
-imports it: `__init__.py` loads only the compiled extension and raises if it is
-missing rather than falling back. Its one caller (`change_id.py`) is gone now
-that `write_id` is bound in C++. All it can still do that the extension cannot is
-`set_position_offset` and raw `unlock_eprom` / `lock_eprom`. Bind those three and
-delete it, or keep two drivers with nothing keeping them in agreement.
+The bench CLI lives in the parent repo at `scripts/ft_servo_tools/`; this
+directory is just the C++ side.

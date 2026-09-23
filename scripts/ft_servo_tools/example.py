@@ -1,6 +1,6 @@
 """Move every servo on the bus 5mm out and back.
 
-    python -m hardware_bindings.ft_servo.example /dev/ttyACM0
+    python scripts/ft_servo_tools/example.py /dev/ttyACM0
 
 Every call here is a batch call. One servo is the same call with a length-1
 list. Timings and the rest of the API are in README.md.
@@ -9,14 +9,14 @@ list. Timings and the rest of the API are in README.md.
 import sys
 import time
 
-from . import FtServo
+from cartesian_hand.servo import open_driver
 
 NUDGE = 600  # counts, ~5mm on a 16mm rack
 
 if len(sys.argv) < 2:
     sys.exit(__doc__)
 
-drv = FtServo(sys.argv[1])
+drv = open_driver(sys.argv[1])
 ids = drv.scan(0, 20)
 start = drv.read_positions(ids)  # None per servo that did not answer
 print(f"{ids} at {start}")
