@@ -70,10 +70,6 @@ def step_limit_mm(cfg: HandConfig,
     budgets found a completely flat objective (measured 2026-09-03). Stall
     detection is affected too -- `STUCK_WINDOW_STEPS` is 10 ticks of *travel*,
     and a joint that arrives instantly never spends them.
-
-    `tests/test_tasks.py::toy_run` has always modelled the servo this way
-    (`pos + (goal - pos).clamp(-step_mm, step_mm)`); this is the same two lines,
-    finally on the backend that claims to be the physical one.
     """
     return (cfg.gain_vector("speed").to(device=device, dtype=torch.float32)
             / cfg.counts_per_mm / cfg.control_hz)[None, :]

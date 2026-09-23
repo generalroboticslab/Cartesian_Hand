@@ -238,10 +238,9 @@ HAND_OFFSET = tuple(_CAMERA_RIGHT * 0.05 + _CAMERA_DOWN * 0.07)
 # `add_html` renders inside `<div dangerouslySetInnerHTML>` (viser's Html.tsx),
 # so the marker sits five levels under the folder's `mantine-Paper-root`:
 # Paper > Collapse > pad > pad > html-div > marker. `:has()` walks back up. To
-# re-derive it after an upgrade, print the marker's ancestor chain -- that is
-# what `tests/test_web_studio.py::test_the_task_menu_is_a_window_on_the_left`
-# does in a real browser, and it fails rather than silently rendering the menu
-# back inside the right-hand panel.
+# re-derive it after an upgrade, print the marker's ancestor chain in a real
+# browser. A broken selector does not fail; it silently renders the menu back
+# inside the right-hand panel.
 #
 # Style notes: `--mantine-color-body` rather than white, so dark mode follows;
 # z-index stays under viser's own notifications, which are also top-left and
