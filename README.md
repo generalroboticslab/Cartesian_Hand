@@ -145,19 +145,6 @@ measurements are in
 [Hardware status](docs/hardware.md#hardware-status); each gap has an entry
 under [Known issues](docs/hardware.md#known-issues).
 
-## Tests
-
-```bash
-python tests/test_trace.py            # check against the recorded traces
-python tests/test_trace.py --update   # re-record after an intended change
-```
-
-One golden-trace check, no framework. It runs all eight tasks against a toy
-plant in millimetres and hashes every goal and every effort they command. What
-it can and cannot catch is in
-[docs/hardware.md#test-suite](docs/hardware.md#test-suite). A pass is not
-evidence about grip force.
-
 ## Documentation
 
 | | |

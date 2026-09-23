@@ -8,7 +8,7 @@ for the engine and backends.
 
 ## DOF indexing and orientation
 
-The DOF table in the [README](../README.md#the-seven-dofs) hides three things.
+The DOF table in the [README](../README.md#the-hand) hides three things.
 
 **DOF index is not servo ID.** The index is how the controller addresses a DOF
 and is the same on every hand. The servo ID is what answers on the serial bus and
@@ -29,7 +29,7 @@ the bench rather than inferred from the left/right labels.
 twin's actuators must be in, not the other way round. `LAYOUT`'s axis sequence
 y,x,x,z,y,x,x matches the MJCF actuator order one for one, established by walking
 `model.actuator_trnid` rather than by reading the comment. Nothing asserts it
-now; see [Test suite](#test-suite).
+now; the comparator that once pinned it against the hardware is gone.
 
 Names and groups (`BASE_FINGERS`, `AUX_FINGERS`) sit in `config.py` directly
 below `LAYOUT`. Putting them in their own file would let the two disagree, and a
@@ -268,48 +268,6 @@ Not yet established:
 - Grip force has not been characterised, and no policy has been transferred from
   a twin.
 
-### Test suite
-
-**The unit suite is gone. `tests/` was deleted on 2026-09-04.** Read every claim
-in this file as a record of what was measured or reasoned at the time, not as
-something a run will catch if it stops being true.
-
-What stands in its place is one golden-trace check:
-
-```bash
-python tests/test_trace.py            # check against the recorded traces
-python tests/test_trace.py --update   # re-record after an intended change
-```
-
-It runs all eight tasks against a toy plant in millimetres, with no bus and no
-mujoco, and hashes every goal *and every effort* they command. It pins
-behaviour, not the invariants the deleted tests reasoned about, but a change
-that alters what a task puts on the wire cannot pass it silently. Traces live in
-`tests/traces.json`; a run takes seconds.
-
-Its coverage is worth stating exactly. Mutating `VELOCITY_WINDOW_TICKS` back to
-a single tick, the dither bug below, fails all five policy tasks. So does
-dropping the `travel_effort` torque floor, and that one is the reason effort is
-in the digest at all: a goal-only digest passed that mutation, because no
-backend here models force. The toy plant has no friction, no following error and
-no encoder quantisation, so it still cannot see a stall that depends on how hard
-a joint pushes. Do not read a pass as evidence about grip.
-
-What went with it is worth knowing before trusting a number here. The suite held
-the sim-versus-real direction and travel comparison, the dead-bus and 50 Hz
-timing checks, the per-row torque floor assertion, and the case where a servo
-dithering a single encoder count has to read as stopped. Several of those bugs
-are invisible on every backend: mujoco and `MockServo` both ignore the torque
-register, and neither quantises position, so a below-floor row or a one-tick
-velocity window looks correct in simulation and hangs on the bench.
-
-It is not recoverable from git. The pre-removal commits do not contain every
-failing case the suite caught, and the mutation recipes exist nowhere else.
-
-Counting tests measures nothing anyway. Mutate the code and re-run -- including
-checking for the case where a test named for the exact bug can't actually see
-it, because its body contains a copy of the logic it was meant to be checking.
-
 ## Known issues
 
 **`max_mm` is a limit, not a description.** There is one hard stop per DOF, the
@@ -340,13 +298,12 @@ find. Run on `hand_2`, it took six of seven carriages off their rails. **Measure
 with calipers and type the numbers in.** `counts_per_mm` is hand-wide, so one
 axis calibrates all seven, while travel is per-DOF and each rail needs its own.
 
-The disagreement was pinned by a comparator reading both sides live, so
+The disagreement was once pinned by a comparator reading both sides live, so
 reconciling either one failed deliberately rather than drifting quietly. That
-file went with the rest of `tests/`, and the two sides can now diverge in
-silence. The direction is not symmetric: **the sim narrows to the hardware,
-never the reverse.** `config` is narrower on all seven DOFs and must stay so,
-because the sim's extra stroke is not headroom, it is where a carriage leaves
-its slider.
+file is gone, and the two sides can now diverge in silence. The direction is
+not symmetric: **the sim narrows to the hardware, never the reverse.** `config`
+is narrower on all seven DOFs and must stay so, because the sim's extra stroke
+is not headroom, it is where a carriage leaves its slider.
 
 **The action offset disagrees, and it is worse than travel.** Scale already
 agrees, since both sides move half the travel per unit of action. The offset does
