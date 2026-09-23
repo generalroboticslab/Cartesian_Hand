@@ -16,8 +16,9 @@ straight line, so a fingertip travels along a fixed axis in any configuration
 and the hand has no singular poses.
 
 This repository is the control stack: task authoring, the tensor engine that
-runs a task, and three backends that execute it on servos, on CPU MuJoCo, or
-on batched GPU MuJoCo.
+runs a task, and three backends (`cartesian_hand.studio` for hardware,
+`cartesian_hand.sim` for CPU MuJoCo, `cartesian_hand.sim --warp` for batched
+GPU MuJoCo) that execute it.
 
 ## Objects
 
