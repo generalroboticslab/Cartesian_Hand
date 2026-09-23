@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hardware_bindings"
+version = "0.1.0"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+# The bench CLIs (`python -m hardware_bindings.ft_servo`) only. Importing the
+# compiled bindings needs nothing, so this stays optional rather than becoming a
+# hard dependency of every consumer of this submodule.
+cli = ["tyro>=0.9"]
+gui = ["tyro>=0.9", "viser"]
+
+[tool.setuptools]
+packages = [
+    "hardware_bindings.motor",
+    "hardware_bindings.imu",
+    "hardware_bindings.ft_servo",
+]
+
+# Flat source dirs mapped to dotted package names. Requires
+# `hardware_bindings` to be importable — handled below by an empty
+# __init__.py that lets setuptools treat it as a namespace package.
+[tool.setuptools.package-dir]
+"hardware_bindings" = "."
+"hardware_bindings.motor" = "motor"
+"hardware_bindings.imu" = "imu"
+"hardware_bindings.ft_servo" = "ft_servo"
+
+[tool.setuptools.package-data]
+"hardware_bindings.motor" = ["*.abi3.so"]
+"hardware_bindings.imu" = ["*.abi3.so"]
+"hardware_bindings.ft_servo" = ["*.abi3.so"]

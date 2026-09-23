@@ -110,7 +110,7 @@ Two controller forms share that pipeline:
 ## Installation
 
 ```bash
-git clone --recurse-submodules https://github.com/generalroboticslab/Cartesian_Hand.git
+git clone https://github.com/generalroboticslab/Cartesian_Hand.git
 cd Cartesian_Hand
 pip install -e ".[sim,studio]"
 ```
@@ -121,10 +121,12 @@ studio's camera window, and `serial` pulls pyserial for the pure-Python servo
 driver. The batched GPU path additionally needs `warp` and `mujoco_warp`, which
 are not declared because they are not on PyPI under stable names.
 
-Already cloned without `--recurse-submodules`? Run
-`git submodule update --init --recursive`. The build compiles the nanobind
-extension (`ft_servo_ext`) around the C++ driver in that submodule, so the init
-is not optional.
+`pip install` compiles the nanobind extension (`ft_servo_ext`) around the C++
+driver under `hardware_bindings/`. The first build needs CMake 3.15+ and a
+C++17 compiler. To skip the build and run only in simulation or read the code,
+install without the `studio` extra; `servo.open_driver` imports the extension
+inside the call rather than at module scope, so importing the package never
+touches hardware.
 
 To read the code, write a task, or run everything in simulation, skip the build.
 `servo.open_driver` imports the extension inside the call rather than at module
@@ -231,7 +233,7 @@ cartesian_hand/
   mjcf.py        model path and the DOF-to-joint map
   servo.py       the serial bus, and MockServo for offline runs
 tests/           test_trace.py and its recorded traces.json
-hardware_bindings/      submodule: IMU, motor and servo bindings
+hardware_bindings/      IMU, motor and servo bindings
 assets/cartesian_hand/  the sim model, generated and bundled
 media/                  figures and clips used by this README
 ```
