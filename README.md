@@ -163,9 +163,9 @@ under [Known issues](docs/hardware.md#known-issues).
 
 | | |
 |---|---|
-| [docs/tasks.md](docs/tasks.md) | Writing a task, how a `--task` name reaches a file |
+| [docs/tasks.md](docs/tasks.md) | A first task, the row reference, variants, studio tuning |
 | [docs/internals.md](docs/internals.md) | The `[N,J,K]` engine, primitives, three backends |
-| [docs/hardware.md](docs/hardware.md) | Zeroing, `HandConfig`, gains, servo setup, status, known issues |
+| [docs/hardware.md](docs/hardware.md) | Configuring a new hand, zeroing, `HandConfig`, gains, servo setup, status, known issues |
 
 ## Citation
 
